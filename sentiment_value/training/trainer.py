@@ -141,7 +141,9 @@ class Trainer:
                             latest_val_results = (val_loss, metrics, cm_path)
                             self._maybe_save_best(val_loss, metrics, cm_path, epoch)
                             checkpoint_path = self._save_checkpoint(
-                                f"batch_{self.global_batch}", state={"epoch": epoch}
+                                f"batch_{self.global_batch}",
+                                cm_path=cm_path,
+                                state={"epoch": epoch},
                             )
                             last_cm_path = cm_path
                             tqdm.write(f"Saved checkpoint at {checkpoint_path}")
@@ -243,7 +245,9 @@ class Trainer:
 
     def _attempt_save_last_checkpoint(self, epoch: int, cm_path: Optional[str]):
         try:
-            checkpoint_path = self._save_checkpoint("last", cm_path=cm_path, state={"epoch": epoch})
+            checkpoint_path = self._save_checkpoint(
+                "last", cm_path=cm_path, state={"epoch": epoch}
+            )
             tqdm.write(f"Saved last checkpoint at {checkpoint_path}")
         except Exception as err:  # pragma: no cover - best effort for robustness
             tqdm.write(f"Failed to save last checkpoint: {err}")
