@@ -2,18 +2,18 @@
 from __future__ import annotations
 
 import argparse
-from pathlib import Path
 from typing import Optional
 
 import torch
 from torch.optim import AdamW
+
 from transformers import (
     AutoModelForSequenceClassification,
     AutoTokenizer,
     get_cosine_schedule_with_warmup,
     get_linear_schedule_with_warmup,
 )
-from transformers.utils import is_flash_attn_2_available
+from transformers.utils import is_flash_attn_2_available # type: ignore
 
 from sentiment_value.utils.logger import NeptuneLogger
 from sentiment_value.utils.config import Config, load_config

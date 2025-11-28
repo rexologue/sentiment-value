@@ -19,3 +19,12 @@ This repository provides a production-ready training pipeline for fine-tuning [`
    ```
 
 Checkpoints and confusion matrix images are saved to the configured `checkpoints_dir`. Neptune logs capture hyperparameters, losses, metrics, and confusion matrices for each validation run.
+
+## Perfomance
+
+For better perfomance it is recommended to install `flash-attn` after another requirements by following coomnads: 
+
+```bash
+python -m pip install ninja
+python -m pip install --no-build-isolation -v flash-attn
+```
