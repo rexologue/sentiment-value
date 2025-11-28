@@ -57,9 +57,11 @@ class ClassificationDataset(Dataset):
             truncation=True,
             padding=False,
             return_tensors="pt",
-        )
+        ) # type: ignore
+
         item = {k: v.squeeze(0) for k, v in item.items()}
         item["labels"] = torch.tensor(self.labels[idx], dtype=torch.long)
+
         return item
 
 
@@ -69,6 +71,7 @@ def collate_batch(tokenizer: AutoTokenizer) -> Callable[[List[Dict[str, torch.Te
         labels = torch.tensor([ex["labels"] for ex in examples], dtype=torch.long)
         batch = tokenizer.pad(features, padding=True, return_tensors="pt")
         batch["labels"] = labels
+
         return batch
 
     return _collate
@@ -100,6 +103,7 @@ def load_datasets(
 
     train_dataset = ClassificationDataset(train_texts, train_labels, tokenizer, config.max_seq_length)
     val_dataset = ClassificationDataset(val_texts, val_labels, tokenizer, config.max_seq_length)
+
     return train_dataset, val_dataset, encoder
 
 
@@ -112,6 +116,7 @@ def create_dataloaders(
     num_workers: int = 0,
 ) -> Tuple[DataLoader, DataLoader]:
     collate_fn = collate_batch(tokenizer)
+    
     train_loader = DataLoader(
         train_dataset,
         batch_size=batch_size,
@@ -119,6 +124,7 @@ def create_dataloaders(
         collate_fn=collate_fn,
         num_workers=num_workers,
     )
+
     val_loader = DataLoader(
         val_dataset,
         batch_size=batch_size,
@@ -126,6 +132,7 @@ def create_dataloaders(
         collate_fn=collate_fn,
         num_workers=num_workers,
     )
+
     return train_loader, val_loader
 
 

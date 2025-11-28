@@ -22,7 +22,7 @@ def prepare_device() -> torch.device:
     return torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
-def ensure_dir(path: str):
+def ensure_dir(path: str | Path):
     Path(path).mkdir(parents=True, exist_ok=True)
 
 

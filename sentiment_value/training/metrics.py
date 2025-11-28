@@ -1,10 +1,10 @@
 """Validation metrics utilities."""
 from __future__ import annotations
 
-from typing import Dict, Iterable, Tuple
+from typing import Dict, Iterable
 
-import matplotlib.pyplot as plt
 import numpy as np
+import matplotlib.pyplot as plt
 from sklearn.metrics import (
     accuracy_score,
     confusion_matrix,
@@ -20,21 +20,30 @@ AVERAGING = "macro"  # consistent averaging across metrics
 def compute_metrics(preds: Iterable[int], labels: Iterable[int]) -> Dict[str, float]:
     preds = np.asarray(list(preds))
     labels = np.asarray(list(labels))
+
     metrics = {
         "accuracy": float(accuracy_score(labels, preds)),
         "precision": float(precision_score(labels, preds, average=AVERAGING, zero_division=0)),
         "recall": float(recall_score(labels, preds, average=AVERAGING, zero_division=0)),
         "f1": float(f1_score(labels, preds, average=AVERAGING, zero_division=0)),
     }
+
     return metrics
 
 
-def plot_confusion_matrix(labels: Iterable[int], preds: Iterable[int], class_names: Iterable[str]) -> plt.Figure:
-    cm = confusion_matrix(list(labels), list(preds), labels=list(range(len(class_names))))
+def plot_confusion_matrix(labels: Iterable[int], preds: Iterable[int], class_names: Iterable[str]) -> plt.Figure: # type: ignore
+    cm = confusion_matrix(
+        list(labels), 
+        list(preds), 
+        labels=list(range(len(class_names))), # type: ignore
+        normalize="true"
+    )
+
     fig, ax = plt.subplots(figsize=(6, 5))
-    im = ax.imshow(cm, interpolation="nearest", cmap=plt.cm.Blues)
+    im = ax.imshow(cm, interpolation="nearest", cmap=plt.cm.Blues) # type: ignore
     ax.figure.colorbar(im, ax=ax)
-    tick_marks = np.arange(len(class_names))
+    tick_marks = np.arange(len(class_names)) # pyright: ignore[reportArgumentType]
+
     ax.set_xticks(tick_marks)
     ax.set_xticklabels(class_names, rotation=45, ha="right")
     ax.set_yticks(tick_marks)
