@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Dict, Optional
 
 import torch
+from shutil import copy2
 
 from sentiment_value.utils.training import ensure_dir
 
@@ -38,7 +39,7 @@ class CheckpointManager:
 
         if confusion_matrix_path:
             dest = checkpoint_dir / Path(confusion_matrix_path).name
-            Path(confusion_matrix_path).replace(dest)
+            copy2(confusion_matrix_path, dest)
             confusion_matrix_path = str(dest)
 
         return checkpoint_dir
