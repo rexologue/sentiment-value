@@ -139,7 +139,7 @@ def main():
         gradient_clip_val=cfg.training.gradient_clip_val,
         label_smoothing=cfg.training.label_smoothing,
         checkpoints_dir=cfg.checkpointing.checkpoints_dir,
-        save_every_n_steps=cfg.checkpointing.save_every_n_steps,
+        save_every_n_bathces=cfg.checkpointing.save_every_n_bathces,
         save_best_by=cfg.checkpointing.save_best_by,
         start_state=start_state,
     )
