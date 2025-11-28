@@ -9,11 +9,11 @@ import torch
 from torch.optim import AdamW
 from transformers import AutoModelForSequenceClassification, AutoTokenizer, get_linear_schedule_with_warmup
 
-from sentiment_value.data.dataset import DatasetConfig, create_dataloaders, load_datasets
-from sentiment_value.training.trainer import Trainer, CheckpointManager
-from sentiment_value.utils.config import Config, load_config
 from sentiment_value.utils.logger import NeptuneLogger
+from sentiment_value.utils.config import Config, load_config
+from sentiment_value.training.trainer import Trainer, CheckpointManager
 from sentiment_value.utils.training import ensure_dir, prepare_device, set_seed
+from sentiment_value.data.dataset import DatasetConfig, create_dataloaders, load_datasets
 
 
 def parse_args():
@@ -29,6 +29,7 @@ def build_scheduler(optimizer, scheduler_config, num_training_steps: int):
             num_warmup_steps=scheduler_config.warmup_steps,
             num_training_steps=num_training_steps,
         )
+    
     return None
 
 
@@ -48,6 +49,7 @@ def main():
         batch_size=cfg.training.batch_size,
         shuffle=True,
     )
+
     train_dataset, val_dataset, label_encoder = load_datasets(data_cfg, cfg.model_name)
     train_loader, val_loader = create_dataloaders(
         train_dataset,
@@ -112,6 +114,7 @@ def main():
 
     try:
         trainer.train(cfg.training.num_epochs)
+        
     finally:
         logger.stop()
 
