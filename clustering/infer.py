@@ -1,7 +1,7 @@
 import argparse
 import math
 import os
-from typing import List, Sequence, Tuple
+from typing import List, Optional, Sequence, Set, Tuple
 
 import pandas as pd
 import torch
@@ -36,6 +36,11 @@ def parse_args() -> argparse.Namespace:
         choices=["float16", "bfloat16", "float32"],
         help="Floating point precision to load the model with.",
     )
+    parser.add_argument(
+        "--resume",
+        action="store_true",
+        help="Resume inference by skipping shards that already exist in the output directory.",
+    )
     return parser.parse_args()
 
 
@@ -68,7 +73,15 @@ def collate_with_texts(tokenizer):
     return _collate
 
 
-def run_inference(model, tokenizer, texts: Sequence[str], batch_size: int, device: str, num_workers: int):
+def run_inference(
+    model,
+    tokenizer,
+    texts: Sequence[str],
+    batch_size: int,
+    device: str,
+    num_workers: int,
+    progress: Optional[tqdm] = None,
+):
     dataset = TextDataset(texts)
     loader = DataLoader(
         dataset,
@@ -81,7 +94,11 @@ def run_inference(model, tokenizer, texts: Sequence[str], batch_size: int, devic
 
     results = []
     model.eval()
-    with torch.no_grad(), tqdm(total=len(dataset), desc="Inference", unit="text") as progress:
+    close_progress = progress is None
+    if progress is None:
+        progress = tqdm(total=len(dataset), desc="Inference", unit="text")
+
+    with torch.no_grad():
         for raw_texts, batch_inputs in loader:
             batch_inputs = {k: v.to(device) for k, v in batch_inputs.items()}
             autocast_enabled = device == "cuda" and torch.cuda.is_available()
@@ -107,24 +124,30 @@ def run_inference(model, tokenizer, texts: Sequence[str], batch_size: int, devic
                     }
                 )
             progress.update(len(raw_texts))
+
+    if close_progress:
+        progress.close()
+
     return results
 
 
-def shard_and_save(results: List[dict], output_dir: str, num_shards: int):
-    os.makedirs(output_dir, exist_ok=True)
-    total = len(results)
-    if num_shards < 1:
-        raise ValueError("num_shards must be at least 1")
+def save_shard(results: List[dict], output_dir: str, shard_idx: int):
+    shard_df = pd.DataFrame(results, columns=["text", "cls", "probs", "label"])
+    shard_path = os.path.join(output_dir, f"part-{shard_idx:05d}.parquet")
+    shard_df.to_parquet(shard_path, index=False)
 
-    shard_size = math.ceil(total / num_shards)
-    for shard_idx in range(num_shards):
-        start = shard_idx * shard_size
-        end = min(start + shard_size, total)
-        if start >= end:
-            break
-        shard_df = pd.DataFrame(results[start:end], columns=["text", "cls", "probs", "label"])
-        shard_path = os.path.join(output_dir, f"part-{shard_idx:05d}.parquet")
-        shard_df.to_parquet(shard_path, index=False)
+
+def discover_existing_shards(output_dir: str) -> Set[int]:
+    if not os.path.isdir(output_dir):
+        return set()
+
+    shard_indices: Set[int] = set()
+    for name in os.listdir(output_dir):
+        if name.startswith("part-") and name.endswith(".parquet"):
+            middle = name[len("part-") : -len(".parquet")]
+            if middle.isdigit():
+                shard_indices.add(int(middle))
+    return shard_indices
 
 
 def main():
@@ -157,8 +180,35 @@ def main():
     model.to(device)
 
     texts = load_data(args.input_parquet)
-    results = run_inference(model, tokenizer, texts, args.batch_size, device.type, args.num_workers)
-    shard_and_save(results, args.output_dir, args.num_shards)
+    if args.num_shards < 1:
+        raise ValueError("num_shards must be at least 1")
+
+    shard_size = math.ceil(len(texts) / args.num_shards)
+    os.makedirs(args.output_dir, exist_ok=True)
+    existing_shards = discover_existing_shards(args.output_dir) if args.resume else set()
+
+    processed = 0
+    for shard_idx in existing_shards:
+        start = shard_idx * shard_size
+        end = min(start + shard_size, len(texts))
+        processed += max(0, end - start)
+
+    with tqdm(total=len(texts), initial=processed, desc="Inference", unit="text") as progress:
+        for shard_idx in range(args.num_shards):
+            start = shard_idx * shard_size
+            end = min(start + shard_size, len(texts))
+            if start >= end:
+                break
+
+            if shard_idx in existing_shards:
+                progress.update(end - start)
+                continue
+
+            shard_texts = texts[start:end]
+            shard_results = run_inference(
+                model, tokenizer, shard_texts, args.batch_size, device.type, args.num_workers, progress
+            )
+            save_shard(shard_results, args.output_dir, shard_idx)
 
 
 if __name__ == "__main__":
