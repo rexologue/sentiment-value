@@ -30,6 +30,12 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--num_workers", type=int, default=0, help="Number of DataLoader workers.")
     parser.add_argument("--num_shards", type=int, default=1, help="Number of output shards to split results into.")
+    parser.add_argument(
+        "--dtype",
+        default="float16",
+        choices=["float16", "bfloat16", "float32"],
+        help="Floating point precision to load the model with.",
+    )
     return parser.parse_args()
 
 
@@ -49,7 +55,7 @@ def load_data(parquet_path: str) -> List[str]:
     return df["text"].tolist()
 
 
-def collate_with_texts(tokenizer, device):
+def collate_with_texts(tokenizer):
     def _collate(batch_texts: List[str]) -> Tuple[List[str], dict]:
         encoded = tokenizer(
             batch_texts,
@@ -57,7 +63,7 @@ def collate_with_texts(tokenizer, device):
             truncation=True,
             return_tensors="pt",
         )
-        return batch_texts, {k: v.to(device) for k, v in encoded.items()}
+        return batch_texts, encoded
 
     return _collate
 
@@ -70,14 +76,17 @@ def run_inference(model, tokenizer, texts: Sequence[str], batch_size: int, devic
         shuffle=False,
         num_workers=num_workers,
         pin_memory=(device == "cuda"),
-        collate_fn=collate_with_texts(tokenizer, device),
+        collate_fn=collate_with_texts(tokenizer),
     )
 
     results = []
     model.eval()
     with torch.no_grad(), tqdm(total=len(dataset), desc="Inference", unit="text") as progress:
         for raw_texts, batch_inputs in loader:
-            outputs = model(**batch_inputs, output_hidden_states=True)
+            batch_inputs = {k: v.to(device) for k, v in batch_inputs.items()}
+            autocast_enabled = device == "cuda" and torch.cuda.is_available()
+            with torch.autocast(device_type=device, enabled=autocast_enabled, dtype=model.dtype):
+                outputs = model(**batch_inputs, output_hidden_states=True)
             logits = outputs.logits
             probs = torch.softmax(logits, dim=-1)
             labels = torch.argmax(logits, dim=-1)
@@ -121,8 +130,17 @@ def shard_and_save(results: List[dict], output_dir: str, num_shards: int):
 def main():
     args = parse_args()
 
-    tokenizer = AutoTokenizer.from_pretrained(args.model_name_or_path, use_fast=True)
-    model = AutoModelForSequenceClassification.from_pretrained(args.model_name_or_path)
+    torch_dtype = getattr(torch, args.dtype)
+    if args.device == "cpu" and torch_dtype != torch.float32:
+        print("CPU execution detected; overriding dtype to float32 for compatibility.")
+        torch_dtype = torch.float32
+
+    tokenizer = AutoTokenizer.from_pretrained(
+        args.model_name_or_path, use_fast=True, fix_mistral_regex=True
+    )
+    model = AutoModelForSequenceClassification.from_pretrained(
+        args.model_name_or_path, torch_dtype=torch_dtype
+    )
     device = torch.device(args.device if args.device == "cpu" or torch.cuda.is_available() else "cpu")
     model.to(device)
 
