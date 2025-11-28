@@ -34,6 +34,7 @@ class TrainingConfig:
     save_best_by: str = "loss"  # or "acc"
     seed: int = 42
     resume_from: Optional[str] = None
+    attention_implementation: Optional[str] = "flash_attention_2"
 
 
 @dataclass
@@ -80,7 +81,7 @@ def load_config(path: str) -> Config:
         values = raw.get(section, {})
         return cls(**values)
 
-    model_name = raw.get("model_name", "deepvk/USER-base")
+    model_name = raw.get("model_name", "jhu-clsp/mmBERT-base")
     data = _load("data", DataConfig)
     training = _load("training", TrainingConfig)
     optimizer = _load("optimizer", OptimizerConfig)
