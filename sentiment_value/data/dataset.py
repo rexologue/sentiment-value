@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Callable, Dict, Iterable, List, Optional, Tuple
+from typing import Callable, Dict, Iterable, List, Optional, Tuple, Union
 
 import pandas as pd
 import torch
@@ -50,14 +50,17 @@ class ClassificationDataset(Dataset):
     def __len__(self) -> int:
         return len(self.texts)
 
-    def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
+    def __getitem__(self, idx: int) -> Dict[str, Union[str, torch.Tensor]]:
+        if self.tokenizer.is_fast:
+            return {"text": self.texts[idx], "labels": torch.tensor(self.labels[idx], dtype=torch.long)}
+
         item = self.tokenizer(
             self.texts[idx],
             max_length=self.max_length,
             truncation=True,
             padding=False,
             return_tensors="pt",
-        ) # type: ignore
+        )  # type: ignore
 
         item = {k: v.squeeze(0) for k, v in item.items()}
         item["labels"] = torch.tensor(self.labels[idx], dtype=torch.long)
@@ -65,11 +68,24 @@ class ClassificationDataset(Dataset):
         return item
 
 
-def collate_batch(tokenizer: AutoTokenizer) -> Callable[[List[Dict[str, torch.Tensor]]], Dict[str, torch.Tensor]]:
+def collate_batch(
+    tokenizer: AutoTokenizer, max_length: int
+) -> Callable[[List[Dict[str, torch.Tensor]]], Dict[str, torch.Tensor]]:
     def _collate(examples: List[Dict[str, torch.Tensor]]):
-        features = [{k: v for k, v in ex.items() if k != "labels"} for ex in examples]
         labels = torch.tensor([ex["labels"] for ex in examples], dtype=torch.long)
-        batch = tokenizer.pad(features, padding=True, return_tensors="pt")
+
+        if tokenizer.is_fast and "text" in examples[0]:
+            batch = tokenizer(
+                [ex["text"] for ex in examples],
+                max_length=max_length,
+                truncation=True,
+                padding=True,
+                return_tensors="pt",
+            )
+        else:
+            features = [{k: v for k, v in ex.items() if k != "labels"} for ex in examples]
+            batch = tokenizer.pad(features, padding=True, return_tensors="pt")
+
         batch["labels"] = labels
 
         return batch
@@ -115,7 +131,7 @@ def create_dataloaders(
     shuffle: bool = True,
     num_workers: int = 0,
 ) -> Tuple[DataLoader, DataLoader]:
-    collate_fn = collate_batch(tokenizer)
+    collate_fn = collate_batch(tokenizer, train_dataset.max_length)
     
     train_loader = DataLoader(
         train_dataset,
