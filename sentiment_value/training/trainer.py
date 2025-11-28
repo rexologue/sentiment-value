@@ -7,8 +7,9 @@ from dataclasses import asdict
 from typing import Dict, Optional
 
 import torch
+import torch.nn.functional as F
 from torch.utils.data import DataLoader
-from torch.optim.lr_scheduler import LambdaLR
+from torch.optim.lr_scheduler import LRScheduler
 
 from sentiment_value.utils.training import move_batch_to_device
 from sentiment_value.training.checkpoint_manager import CheckpointManager
@@ -22,13 +23,14 @@ class Trainer:
         train_loader: DataLoader,
         val_loader: DataLoader,
         optimizer: torch.optim.Optimizer,
-        scheduler: Optional[LambdaLR],
+        scheduler: Optional[LRScheduler],
         device: torch.device,
         logger,
         label_encoder,
         grad_accum_steps: int = 1,
         mixed_precision: bool = False,
         gradient_clip_val: Optional[float] = None,
+        label_smoothing: float = 0.0,
         checkpoints_dir: str = "checkpoints",
         save_every_n_steps: int = 500,
         save_best_by: str = "loss",
@@ -46,6 +48,9 @@ class Trainer:
         self.grad_accum_steps = grad_accum_steps
         self.mixed_precision = mixed_precision
         self.gradient_clip_val = gradient_clip_val
+        if not 0.0 <= label_smoothing < 1.0:
+            raise ValueError("label_smoothing must be in the range [0.0, 1.0)")
+        self.label_smoothing = label_smoothing
         self.checkpoint_manager = CheckpointManager(checkpoints_dir)
         self.save_every_n_steps = save_every_n_steps
         self.save_best_by = save_best_by
@@ -70,9 +75,18 @@ class Trainer:
             for step, batch in enumerate(self.train_loader):
                 batch = move_batch_to_device(batch, self.device)
 
-                with torch.cuda.amp.autocast(enabled=self.mixed_precision):
+                with torch.amp.autocast(device_type=self.device.type, enabled=self.mixed_precision):
                     outputs = self.model(**batch)
-                    loss = outputs.loss / self.grad_accum_steps
+                    if self.label_smoothing > 0.0:
+                        loss = F.cross_entropy(
+                            outputs.logits,
+                            batch["labels"],
+                            label_smoothing=self.label_smoothing,
+                        )
+                    else:
+                        loss = outputs.loss
+
+                    loss = loss / self.grad_accum_steps
 
                 self.scaler.scale(loss).backward()
                 if (step + 1) % self.grad_accum_steps == 0:
@@ -109,8 +123,15 @@ class Trainer:
             for batch in self.val_loader:
                 batch = move_batch_to_device(batch, self.device)
                 outputs = self.model(**batch)
-                loss = outputs.loss
                 logits = outputs.logits
+                if self.label_smoothing > 0.0:
+                    loss = F.cross_entropy(
+                        logits,
+                        batch["labels"],
+                        label_smoothing=self.label_smoothing,
+                    )
+                else:
+                    loss = outputs.loss
                 total_loss += loss.item()
                 preds.extend(torch.argmax(logits, dim=-1).tolist())
                 labels.extend(batch["labels"].tolist())
