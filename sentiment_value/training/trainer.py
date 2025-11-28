@@ -32,7 +32,7 @@ class Trainer:
         gradient_clip_val: Optional[float] = None,
         label_smoothing: float = 0.0,
         checkpoints_dir: str = "checkpoints",
-        save_every_n_steps: int = 500,
+        save_every_n_bathces: int = 500,
         save_best_by: str = "loss",
         start_state: Optional[Dict] = None,
     ):
@@ -52,10 +52,11 @@ class Trainer:
             raise ValueError("label_smoothing must be in the range [0.0, 1.0)")
         self.label_smoothing = label_smoothing
         self.checkpoint_manager = CheckpointManager(checkpoints_dir)
-        self.save_every_n_steps = save_every_n_steps
+        self.save_every_n_batches = save_every_n_bathces
         self.save_best_by = save_best_by
 
         self.global_step = 0
+        self.global_batch = 0
         self.start_epoch = 0
         self.best_metric = float("inf") if save_best_by == "loss" else float("-inf")
         self.use_cuda_amp = mixed_precision and device.type == "cuda"
@@ -63,6 +64,7 @@ class Trainer:
 
         if start_state:
             self.global_step = start_state.get("global_step", 0)
+            self.global_batch = start_state.get("global_batch", 0)
             self.start_epoch = start_state.get("epoch", 0)
             self.best_metric = start_state.get("best_metric", self.best_metric)
 
@@ -85,6 +87,7 @@ class Trainer:
                     dynamic_ncols=True,
                 ) as progress:
                     for step, batch in progress:
+                        self.global_batch += 1
                         batch = move_batch_to_device(batch, self.device)
 
                         autocast_context = (
@@ -120,21 +123,23 @@ class Trainer:
 
                             self.global_step += 1
 
-                            if self.global_step % self.save_every_n_steps == 0:
-                                val_loss, metrics, cm_path = self.validate(epoch)
-                                latest_val_results = (val_loss, metrics, cm_path)
-                                self._maybe_save_best(val_loss, metrics, cm_path, epoch)
-                                checkpoint_path = self._save_checkpoint(
-                                    f"step_{self.global_step}", state={"epoch": epoch}
-                                )
-                                last_cm_path = cm_path
-                                tqdm.write(f"Saved checkpoint at {checkpoint_path}")
-
                         epoch_loss += loss.item() * self.grad_accum_steps
+                        running_train_loss = epoch_loss / (step + 1)
+                        self.logger.save_metrics("train", "loss", running_train_loss, step=self.global_batch)
                         progress.set_postfix(train_loss=epoch_loss / (step + 1))
 
+                        if self.global_batch % self.save_every_n_batches == 0:
+                            val_loss, metrics, cm_path = self.validate(epoch)
+                            latest_val_results = (val_loss, metrics, cm_path)
+                            self._maybe_save_best(val_loss, metrics, cm_path, epoch)
+                            checkpoint_path = self._save_checkpoint(
+                                f"batch_{self.global_batch}", state={"epoch": epoch}
+                            )
+                            last_cm_path = cm_path
+                            tqdm.write(f"Saved checkpoint at {checkpoint_path}")
+
                     avg_train_loss = epoch_loss / len(self.train_loader)
-                    self.logger.save_metrics("train", "loss", avg_train_loss, step=self.global_step)
+                    self.logger.save_metrics("train", "loss", avg_train_loss, step=self.global_batch)
 
                     if latest_val_results is None:
                         val_loss, metrics, cm_path = self.validate(epoch)
@@ -176,9 +181,9 @@ class Trainer:
         cm_path = self._save_confusion_matrix(cm_fig, epoch)
 
         self.logger.save_metrics(
-            "val", 
-            ["loss", "accuracy", "precision", "recall", "f1"], 
-            [avg_loss, metrics["accuracy"], metrics["precision"], metrics["recall"], metrics["f1"]], step=self.global_step
+            "val",
+            ["loss", "accuracy", "precision", "recall", "f1"],
+            [avg_loss, metrics["accuracy"], metrics["precision"], metrics["recall"], metrics["f1"]], step=self.global_batch
         )
         self.logger.save_plot("val", f"confusion_matrix_epoch_{epoch}", cm_fig)
 
@@ -209,6 +214,7 @@ class Trainer:
     ) -> Path:
         base_state = {
             "global_step": self.global_step,
+            "global_batch": self.global_batch,
             "epoch": state.get("epoch", 0) if state else 0,
             "best_metric": self.best_metric,
         }

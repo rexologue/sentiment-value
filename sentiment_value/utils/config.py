@@ -56,7 +56,7 @@ class DataConfig:
 @dataclass
 class CheckpointConfig:
     checkpoints_dir: str = "checkpoints"
-    save_every_n_steps: int = 500
+    save_every_n_bathces: int = 500
     save_best_by: str = "loss"
 
 
