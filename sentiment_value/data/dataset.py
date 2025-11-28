@@ -3,11 +3,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Callable, Dict, Iterable, List, Optional, Tuple, Union
+from collections import Counter
 
 import pandas as pd
 import torch
 from sklearn.model_selection import train_test_split
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import DataLoader, Dataset, WeightedRandomSampler
 from transformers import AutoTokenizer
 
 
@@ -123,6 +124,18 @@ def load_datasets(
     return train_dataset, val_dataset, encoder
 
 
+def _build_balanced_sampler(labels: List[int]) -> WeightedRandomSampler:
+    counts = Counter(labels)
+    if not counts:
+        raise ValueError("Cannot build sampler without labels")
+
+    max_count = max(counts.values())
+    weights = [max_count / counts[label] for label in labels]
+    num_samples = max_count * len(counts)
+
+    return WeightedRandomSampler(weights, num_samples=num_samples, replacement=True)
+
+
 def create_dataloaders(
     train_dataset: ClassificationDataset,
     val_dataset: ClassificationDataset,
@@ -130,13 +143,17 @@ def create_dataloaders(
     batch_size: int,
     shuffle: bool = True,
     num_workers: int = 0,
+    upsample: bool = False,
 ) -> Tuple[DataLoader, DataLoader]:
     collate_fn = collate_batch(tokenizer, train_dataset.max_length)
-    
+
+    sampler = _build_balanced_sampler(train_dataset.labels) if upsample else None
+
     train_loader = DataLoader(
         train_dataset,
         batch_size=batch_size,
-        shuffle=shuffle,
+        shuffle=False if sampler is not None else shuffle,
+        sampler=sampler,
         collate_fn=collate_fn,
         num_workers=num_workers,
     )

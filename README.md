@@ -4,6 +4,7 @@ This repository provides a production-ready training pipeline for fine-tuning [`
 
 ## Features
 - Parquet dataset loader with automatic label encoding, configurable max sequence length, and train/validation split.
+- Optional upsampling of minority classes to match the largest class using a balanced sampler.
 - Efficient tokenization, padding, and batching for PyTorch dataloaders.
 - Training loop with gradient accumulation, optional mixed precision, gradient clipping, and Neptune logging.
 - Validation metrics (accuracy, precision, recall, F1, confusion matrix) with PNG export and logging.

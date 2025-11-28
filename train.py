@@ -79,6 +79,7 @@ def main():
         batch_size=cfg.training.batch_size,
         shuffle=True,
         num_workers=cfg.data.num_workers,
+        upsample=cfg.data.upsample,
     )
 
     attn_implementation = cfg.training.attention_implementation
@@ -117,6 +118,7 @@ def main():
             "scheduler_num_cycles": cfg.scheduler.num_cycles,
             "label_smoothing": cfg.training.label_smoothing,
             "attention_implementation": attn_implementation or "default",
+            "upsample": cfg.data.upsample,
         }
     )
 
