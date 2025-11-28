@@ -7,7 +7,12 @@ from typing import Optional
 
 import torch
 from torch.optim import AdamW
-from transformers import AutoModelForSequenceClassification, AutoTokenizer, get_linear_schedule_with_warmup
+from transformers import (
+    AutoModelForSequenceClassification,
+    AutoTokenizer,
+    get_cosine_schedule_with_warmup,
+    get_linear_schedule_with_warmup,
+)
 
 from sentiment_value.utils.logger import NeptuneLogger
 from sentiment_value.utils.config import Config, load_config
@@ -23,13 +28,24 @@ def parse_args():
 
 
 def build_scheduler(optimizer, scheduler_config, num_training_steps: int):
+    total_steps = scheduler_config.num_training_steps or num_training_steps
+    if total_steps is None:
+        raise ValueError("num_training_steps must be provided to configure the scheduler.")
     if scheduler_config.name == "linear":
         return get_linear_schedule_with_warmup(
             optimizer,
             num_warmup_steps=scheduler_config.warmup_steps,
-            num_training_steps=num_training_steps,
+            num_training_steps=total_steps,
         )
-    
+
+    if scheduler_config.name == "cosine":
+        return get_cosine_schedule_with_warmup(
+            optimizer,
+            num_warmup_steps=scheduler_config.warmup_steps,
+            num_training_steps=total_steps,
+            num_cycles=scheduler_config.num_cycles,
+        )
+
     return None
 
 
@@ -86,6 +102,9 @@ def main():
             "gradient_accumulation_steps": cfg.training.gradient_accumulation_steps,
             "weight_decay": cfg.optimizer.weight_decay,
             "warmup_steps": cfg.scheduler.warmup_steps,
+            "scheduler": cfg.scheduler.name,
+            "scheduler_num_cycles": cfg.scheduler.num_cycles,
+            "label_smoothing": cfg.training.label_smoothing,
         }
     )
 
@@ -106,6 +125,7 @@ def main():
         grad_accum_steps=cfg.training.gradient_accumulation_steps,
         mixed_precision=cfg.training.mixed_precision,
         gradient_clip_val=cfg.training.gradient_clip_val,
+        label_smoothing=cfg.training.label_smoothing,
         checkpoints_dir=cfg.checkpointing.checkpoints_dir,
         save_every_n_steps=cfg.checkpointing.save_every_n_steps,
         save_best_by=cfg.checkpointing.save_best_by,

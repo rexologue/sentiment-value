@@ -18,6 +18,7 @@ class SchedulerConfig:
     warmup_steps: int = 0
     num_training_steps: Optional[int] = None
     name: str = "linear"
+    num_cycles: float = 0.5
 
 
 @dataclass
@@ -28,6 +29,7 @@ class TrainingConfig:
     max_seq_length: int = 256
     mixed_precision: bool = False
     gradient_clip_val: Optional[float] = None
+    label_smoothing: float = 0.0
     save_every_n_steps: int = 500
     save_best_by: str = "loss"  # or "acc"
     seed: int = 42
