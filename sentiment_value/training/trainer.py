@@ -8,6 +8,7 @@ from typing import Dict, Optional
 
 import torch
 import torch.nn.functional as F
+from contextlib import nullcontext
 from torch.utils.data import DataLoader
 from torch.optim.lr_scheduler import LRScheduler
 
@@ -58,8 +59,8 @@ class Trainer:
         self.global_step = 0
         self.start_epoch = 0
         self.best_metric = float("inf") if save_best_by == "loss" else float("-inf")
-        device_type = "cuda" if device.type == "cuda" else "cpu"
-        self.scaler = torch.amp.GradScaler(device_type=device_type, enabled=mixed_precision)
+        self.use_cuda_amp = mixed_precision and device.type == "cuda"
+        self.scaler = torch.amp.GradScaler("cuda", enabled=self.use_cuda_amp)
 
         if start_state:
             self.global_step = start_state.get("global_step", 0)
@@ -76,7 +77,12 @@ class Trainer:
             for step, batch in enumerate(self.train_loader):
                 batch = move_batch_to_device(batch, self.device)
 
-                with torch.amp.autocast(device_type=self.device.type, enabled=self.mixed_precision):
+                autocast_context = (
+                    torch.amp.autocast("cuda", enabled=True)
+                    if self.use_cuda_amp
+                    else nullcontext()
+                )
+                with autocast_context:
                     outputs = self.model(**batch)
                     if self.label_smoothing > 0.0:
                         loss = F.cross_entropy(
