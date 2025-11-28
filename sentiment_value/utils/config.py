@@ -30,8 +30,6 @@ class TrainingConfig:
     mixed_precision: bool = False
     gradient_clip_val: Optional[float] = None
     label_smoothing: float = 0.0
-    save_every_n_steps: int = 500
-    save_best_by: str = "loss"  # or "acc"
     seed: int = 42
     resume_from: Optional[str] = None
     attention_implementation: Optional[str] = "flash_attention_2"
