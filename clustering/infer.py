@@ -135,9 +135,21 @@ def main():
         print("CPU execution detected; overriding dtype to float32 for compatibility.")
         torch_dtype = torch.float32
 
-    tokenizer = AutoTokenizer.from_pretrained(
-        args.model_name_or_path, use_fast=True, fix_mistral_regex=True
-    )
+    try:
+        tokenizer = AutoTokenizer.from_pretrained(
+            args.model_name_or_path, use_fast=True, fix_mistral_regex=True
+        )
+    except TypeError:
+        # Older versions of `tokenizers` use immutable pre-tokenizers, which makes the
+        # `fix_mistral_regex` patch incompatible. Retry without applying the fix so
+        # inference can proceed on those environments.
+        print(
+            "Encountered TypeError while applying mistral regex fix; "
+            "retrying with fix_mistral_regex=False for tokenizer compatibility."
+        )
+        tokenizer = AutoTokenizer.from_pretrained(
+            args.model_name_or_path, use_fast=True, fix_mistral_regex=False
+        )
     model = AutoModelForSequenceClassification.from_pretrained(
         args.model_name_or_path, torch_dtype=torch_dtype
     )
