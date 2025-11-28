@@ -11,3 +11,4 @@ python-dotenv>=1.0.0
 bs4
 ftfy
 tqdm>=4.66.0
+safetensors>=0.4.0
