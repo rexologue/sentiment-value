@@ -10,3 +10,4 @@ neptune>=1.10.0
 python-dotenv>=1.0.0
 bs4
 ftfy
+tqdm>=4.66.0
