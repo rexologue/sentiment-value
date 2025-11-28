@@ -1,4 +1,4 @@
-"""Entrypoint for fine-tuning deepvk/USER-base on text classification."""
+"""Entrypoint for fine-tuning jhu-clsp/mmBERT-base on text classification."""
 from __future__ import annotations
 
 import argparse
@@ -13,6 +13,7 @@ from transformers import (
     get_cosine_schedule_with_warmup,
     get_linear_schedule_with_warmup,
 )
+from transformers.utils import is_flash_attn_2_available
 
 from sentiment_value.utils.logger import NeptuneLogger
 from sentiment_value.utils.config import Config, load_config
@@ -76,9 +77,15 @@ def main():
         num_workers=cfg.data.num_workers,
     )
 
+    attn_implementation = cfg.training.attention_implementation
+    if attn_implementation == "flash_attention_2" and not is_flash_attn_2_available():
+        print("FlashAttention-2 not available. Falling back to default attention implementation.")
+        attn_implementation = None
+
     model = AutoModelForSequenceClassification.from_pretrained(
         cfg.model_name,
         num_labels=label_encoder.num_labels,
+        attn_implementation=attn_implementation,
     )
 
     optimizer = AdamW(
@@ -105,6 +112,7 @@ def main():
             "scheduler": cfg.scheduler.name,
             "scheduler_num_cycles": cfg.scheduler.num_cycles,
             "label_smoothing": cfg.training.label_smoothing,
+            "attention_implementation": attn_implementation or "default",
         }
     )
 

@@ -1,4 +1,4 @@
-model_name: deepvk/USER-base
+model_name: jhu-clsp/mmBERT-base
 
 data:
   parquet_path: data/dataset.parquet
@@ -11,6 +11,7 @@ training:
   gradient_accumulation_steps: 1
   max_seq_length: 256
   mixed_precision: false
+  attention_implementation: flash_attention_2
   gradient_clip_val: 1.0
   label_smoothing: 0.0
   save_every_n_steps: 500
