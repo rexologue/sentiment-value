@@ -69,70 +69,90 @@ class Trainer:
         self.model.to(self.device)
 
     def train(self, num_epochs: int):
-        for epoch in range(self.start_epoch, num_epochs):
-            self.model.train()
-            epoch_loss = 0.0
+        last_cm_path: Optional[str] = None
+        epoch = self.start_epoch
 
-            with tqdm(
-                enumerate(self.train_loader),
-                total=len(self.train_loader),
-                desc=f"Epoch {epoch + 1}",
-                dynamic_ncols=True,
-            ) as progress:
-                for step, batch in progress:
-                    batch = move_batch_to_device(batch, self.device)
+        try:
+            for epoch in range(self.start_epoch, num_epochs):
+                self.model.train()
+                epoch_loss = 0.0
+                latest_val_results: Optional[tuple[float, Dict[str, float], str]] = None
 
-                    autocast_context = (
-                        torch.amp.autocast("cuda", enabled=True) # type: ignore
-                        if self.use_cuda_amp
-                        else nullcontext()
+                with tqdm(
+                    enumerate(self.train_loader),
+                    total=len(self.train_loader),
+                    desc=f"Epoch {epoch + 1}",
+                    dynamic_ncols=True,
+                ) as progress:
+                    for step, batch in progress:
+                        batch = move_batch_to_device(batch, self.device)
+
+                        autocast_context = (
+                            torch.amp.autocast("cuda", enabled=True) # type: ignore
+                            if self.use_cuda_amp
+                            else nullcontext()
+                        )
+                        with autocast_context:
+                            outputs = self.model(**batch)
+                            if self.label_smoothing > 0.0:
+                                loss = F.cross_entropy(
+                                    outputs.logits,
+                                    batch["labels"],
+                                    label_smoothing=self.label_smoothing,
+                                )
+                            else:
+                                loss = outputs.loss
+
+                            loss = loss / self.grad_accum_steps
+
+                        self.scaler.scale(loss).backward()
+                        if (step + 1) % self.grad_accum_steps == 0:
+                            if self.gradient_clip_val is not None:
+                                self.scaler.unscale_(self.optimizer)
+                                torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.gradient_clip_val)
+
+                            self.scaler.step(self.optimizer)
+                            self.scaler.update()
+                            self.optimizer.zero_grad()
+
+                            if self.scheduler is not None:
+                                self.scheduler.step()
+
+                            self.global_step += 1
+
+                            if self.global_step % self.save_every_n_steps == 0:
+                                val_loss, metrics, cm_path = self.validate(epoch)
+                                latest_val_results = (val_loss, metrics, cm_path)
+                                self._maybe_save_best(val_loss, metrics, cm_path, epoch)
+                                checkpoint_path = self._save_checkpoint(
+                                    f"step_{self.global_step}", state={"epoch": epoch}
+                                )
+                                last_cm_path = cm_path
+                                tqdm.write(f"Saved checkpoint at {checkpoint_path}")
+
+                        epoch_loss += loss.item() * self.grad_accum_steps
+                        progress.set_postfix(train_loss=epoch_loss / (step + 1))
+
+                    avg_train_loss = epoch_loss / len(self.train_loader)
+                    self.logger.save_metrics("train", "loss", avg_train_loss, step=self.global_step)
+
+                    if latest_val_results is None:
+                        val_loss, metrics, cm_path = self.validate(epoch)
+                    else:
+                        val_loss, metrics, cm_path = latest_val_results
+
+                    last_cm_path = cm_path
+                    progress.set_description(
+                        f"Epoch {epoch + 1} | train_loss={avg_train_loss:.4f} "
+                        f"val_loss={val_loss:.4f} val_f1={metrics['f1']:.4f}"
                     )
-                    with autocast_context:
-                        outputs = self.model(**batch)
-                        if self.label_smoothing > 0.0:
-                            loss = F.cross_entropy(
-                                outputs.logits,
-                                batch["labels"],
-                                label_smoothing=self.label_smoothing,
-                            )
-                        else:
-                            loss = outputs.loss
+                    progress.refresh()
+                    self._maybe_save_best(val_loss, metrics, cm_path, epoch)
 
-                        loss = loss / self.grad_accum_steps
-
-                    self.scaler.scale(loss).backward()
-                    if (step + 1) % self.grad_accum_steps == 0:
-                        if self.gradient_clip_val is not None:
-                            self.scaler.unscale_(self.optimizer)
-                            torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.gradient_clip_val)
-
-                        self.scaler.step(self.optimizer)
-                        self.scaler.update()
-                        self.optimizer.zero_grad()
-
-                        if self.scheduler is not None:
-                            self.scheduler.step()
-
-                        self.global_step += 1
-
-                        if self.global_step % self.save_every_n_steps == 0:
-                            checkpoint_path = self._save_checkpoint(
-                                f"step_{self.global_step}", state={"epoch": epoch}
-                            )
-                            tqdm.write(f"Saved checkpoint at {checkpoint_path}")
-
-                    epoch_loss += loss.item() * self.grad_accum_steps
-                    progress.set_postfix(train_loss=epoch_loss / (step + 1))
-
-                avg_train_loss = epoch_loss / len(self.train_loader)
-                self.logger.save_metrics("train", "loss", avg_train_loss, step=self.global_step)
-                val_loss, metrics, cm_path = self.validate(epoch)
-                progress.set_description(
-                    f"Epoch {epoch + 1} | train_loss={avg_train_loss:.4f} "
-                    f"val_loss={val_loss:.4f} val_f1={metrics['f1']:.4f}"
-                )
-                progress.refresh()
-                self._maybe_save_best(val_loss, metrics, cm_path, epoch)
+            self._attempt_save_last_checkpoint(epoch, last_cm_path)
+        except Exception:
+            self._attempt_save_last_checkpoint(epoch, last_cm_path)
+            raise
 
     def validate(self, epoch: int):
         self.model.eval()
@@ -145,14 +165,7 @@ class Trainer:
                 batch = move_batch_to_device(batch, self.device)
                 outputs = self.model(**batch)
                 logits = outputs.logits
-                if self.label_smoothing > 0.0:
-                    loss = F.cross_entropy(
-                        logits,
-                        batch["labels"],
-                        label_smoothing=self.label_smoothing,
-                    )
-                else:
-                    loss = outputs.loss
+                loss = outputs.loss
                 total_loss += loss.item()
                 preds.extend(torch.argmax(logits, dim=-1).tolist())
                 labels.extend(batch["labels"].tolist())
@@ -211,6 +224,13 @@ class Trainer:
             state=base_state,
             confusion_matrix_path=cm_path,
         )
+
+    def _attempt_save_last_checkpoint(self, epoch: int, cm_path: Optional[str]):
+        try:
+            checkpoint_path = self._save_checkpoint("last", cm_path=cm_path, state={"epoch": epoch})
+            tqdm.write(f"Saved last checkpoint at {checkpoint_path}")
+        except Exception as err:  # pragma: no cover - best effort for robustness
+            tqdm.write(f"Failed to save last checkpoint: {err}")
 
 
 __all__ = ["Trainer"]
