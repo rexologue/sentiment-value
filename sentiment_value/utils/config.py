@@ -51,6 +51,7 @@ class DataConfig:
     parquet_path: str = "data/train.parquet"
     val_ratio: float = 0.1
     num_workers: int = 0
+    upsample: bool = False
 
 
 @dataclass
