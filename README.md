@@ -23,9 +23,30 @@ Checkpoints and confusion matrix images are saved to the configured `checkpoints
 
 ## Perfomance
 
-For better perfomance it is recommended to install `flash-attn` after another requirements by following coomnads: 
+For better perfomance it is recommended to install `flash-attn` after another requirements by following coomnads:
 
 ```bash
 python -m pip install ninja
 python -m pip install --no-build-isolation -v flash-attn
 ```
+
+## Converting checkpoints to safetensors
+
+Use `convert_checkpoint.py` to convert a saved `model.pt` file into the `safetensors` format. You can point the script directly to a checkpoint directory or to a specific `model.pt` file.
+
+```bash
+python convert_checkpoint.py \
+  --checkpoint checkpoints/epoch-5 \
+  --output-dir exported
+```
+
+If you want to rebuild a full Hugging Face compatible folder (including tokenizer files), provide the path or identifier of the original pretrained model:
+
+```bash
+python convert_checkpoint.py \
+  --checkpoint checkpoints/epoch-5 \
+  --model-path jhu-clsp/mmBERT-base \
+  --output-dir exported
+```
+
+Pass file names via `--copy-extra` to copy other artifacts (such as `state.json`) from the checkpoint directory to the output folder.
