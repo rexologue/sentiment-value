@@ -31,7 +31,7 @@ scheduler:
 checkpointing:
   checkpoints_dir: checkpoints
   save_every_n_bathces: 500
-  save_best_by: loss
+  save_best_by: f1  # options: loss, accuracy, f1
 
 neptune:
   project: your-username/your-project

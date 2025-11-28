@@ -37,6 +37,9 @@ class Trainer:
         start_state: Optional[Dict] = None,
     ):
         
+        if save_best_by not in {"loss", "accuracy", "f1"}:
+            raise ValueError("save_best_by must be one of {'loss', 'accuracy', 'f1'}")
+
         self.model = model
         self.train_loader = train_loader
         self.val_loader = val_loader
@@ -123,6 +126,11 @@ class Trainer:
 
                             self.global_step += 1
 
+                            current_lr = self.optimizer.param_groups[0].get("lr")
+                            self.logger.save_metrics(
+                                "train", "learning_rate", current_lr, step=self.global_step
+                            )
+
                         epoch_loss += loss.item() * self.grad_accum_steps
                         running_train_loss = epoch_loss / (step + 1)
                         self.logger.save_metrics("train", "loss", running_train_loss, step=self.global_batch)
@@ -196,7 +204,7 @@ class Trainer:
         return str(cm_path)
 
     def _maybe_save_best(self, val_loss: float, metrics: Dict[str, float], cm_path: str, epoch: int):
-        metric = val_loss if self.save_best_by == "loss" else metrics.get("accuracy", 0.0)
+        metric = val_loss if self.save_best_by == "loss" else metrics.get(self.save_best_by, 0.0)
         is_better = metric < self.best_metric if self.save_best_by == "loss" else metric > self.best_metric
 
         if is_better:
