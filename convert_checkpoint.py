@@ -8,7 +8,7 @@ from shutil import copy2
 
 import torch
 from safetensors.torch import save_file
-from transformers import AutoModelForSequenceClassification, AutoTokenizer
+from transformers import AutoConfig, AutoModelForSequenceClassification, AutoTokenizer
 
 
 def parse_args() -> argparse.Namespace:
@@ -73,7 +73,20 @@ def save_safetensors(state_dict: dict, output_dir: Path) -> Path:
 def build_full_model_folder(
     state_dict: dict, model_path: str, output_dir: Path
 ) -> None:
-    model = AutoModelForSequenceClassification.from_pretrained(model_path)
+    num_labels = None
+    classifier_weight = state_dict.get("classifier.weight")
+    if classifier_weight is not None:
+        num_labels = classifier_weight.shape[0]
+
+    config = AutoConfig.from_pretrained(model_path)
+    if num_labels is not None and config.num_labels != num_labels:
+        config.num_labels = num_labels
+        config.id2label = {i: str(i) for i in range(num_labels)}
+        config.label2id = {label: idx for idx, label in config.id2label.items()}
+
+    model = AutoModelForSequenceClassification.from_pretrained(
+        model_path, config=config
+    )
     model.load_state_dict(state_dict, strict=True)
     model.save_pretrained(output_dir, safe_serialization=True)
 
