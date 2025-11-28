@@ -57,7 +57,7 @@ class Trainer:
         self.start_epoch = 0
         self.best_metric = float("inf") if save_best_by == "loss" else float("-inf")
         self.use_cuda_amp = mixed_precision and device.type == "cuda"
-        self.scaler = torch.amp.GradScaler("cuda", enabled=self.use_cuda_amp)
+        self.scaler = torch.amp.GradScaler("cuda", enabled=self.use_cuda_amp) # type: ignore
 
         if start_state:
             self.global_step = start_state.get("global_step", 0)
@@ -75,7 +75,7 @@ class Trainer:
                 batch = move_batch_to_device(batch, self.device)
 
                 autocast_context = (
-                    torch.amp.autocast("cuda", enabled=True)
+                    torch.amp.autocast("cuda", enabled=True) # type: ignore
                     if self.use_cuda_amp
                     else nullcontext()
                 )
