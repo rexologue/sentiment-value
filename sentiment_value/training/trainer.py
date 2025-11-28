@@ -147,7 +147,9 @@ class Trainer:
                             tqdm.write(f"Saved checkpoint at {checkpoint_path}")
 
                     avg_train_loss = epoch_loss / len(self.train_loader)
-                    self.logger.save_metrics("train", "loss", avg_train_loss, step=self.global_batch)
+                    self.logger.save_metrics(
+                        "train", "epoch_loss", avg_train_loss, step=self.global_batch
+                    )
 
                     if latest_val_results is None:
                         val_loss, metrics, cm_path = self.validate(epoch)
