@@ -58,7 +58,8 @@ class Trainer:
         self.global_step = 0
         self.start_epoch = 0
         self.best_metric = float("inf") if save_best_by == "loss" else float("-inf")
-        self.scaler = torch.cuda.amp.GradScaler(enabled=mixed_precision)
+        device_type = "cuda" if device.type == "cuda" else "cpu"
+        self.scaler = torch.amp.GradScaler(device_type=device_type, enabled=mixed_precision)
 
         if start_state:
             self.global_step = start_state.get("global_step", 0)

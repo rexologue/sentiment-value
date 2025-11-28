@@ -57,6 +57,9 @@ def main():
     set_seed(cfg.training.seed)
     device = prepare_device()
 
+    if hasattr(torch, "set_float32_matmul_precision"):
+        torch.set_float32_matmul_precision("high")
+
     tokenizer = AutoTokenizer.from_pretrained(cfg.model_name)
     data_cfg = DatasetConfig(
         parquet_path=cfg.data.parquet_path,
