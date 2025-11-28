@@ -6,7 +6,6 @@ from pathlib import Path
 from typing import Dict, Optional
 
 import torch
-from torch.optim.lr_scheduler import LambdaLR
 
 from sentiment_value.utils.training import ensure_dir
 
@@ -21,7 +20,7 @@ class CheckpointManager:
         name: str,
         model: torch.nn.Module,
         optimizer: torch.optim.Optimizer,
-        scheduler: Optional[LambdaLR],
+        scheduler: Optional[torch.optim.lr_scheduler.LRScheduler],
         state: Dict,
         confusion_matrix_path: Optional[str] = None,
     ) -> Path:
@@ -49,7 +48,7 @@ class CheckpointManager:
         checkpoint_dir: str,
         model: torch.nn.Module,
         optimizer: torch.optim.Optimizer,
-        scheduler: Optional[LambdaLR] = None,
+        scheduler: Optional[torch.optim.lr_scheduler.LRScheduler] = None,
     ) -> Dict:
         
         checkpoint_path = Path(checkpoint_dir)

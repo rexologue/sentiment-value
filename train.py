@@ -15,9 +15,10 @@ from transformers import (
 )
 from transformers.utils import is_flash_attn_2_available # type: ignore
 
+from sentiment_value.training.trainer import Trainer
 from sentiment_value.utils.logger import NeptuneLogger
 from sentiment_value.utils.config import Config, load_config
-from sentiment_value.training.trainer import Trainer, CheckpointManager
+from sentiment_value.training.checkpoint_manager import CheckpointManager
 from sentiment_value.utils.training import ensure_dir, prepare_device, set_seed
 from sentiment_value.data.dataset import DatasetConfig, create_dataloaders, load_datasets
 
