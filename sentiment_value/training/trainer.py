@@ -1,9 +1,6 @@
 """Training loop with checkpointing and validation."""
 from __future__ import annotations
 
-import json
-from pathlib import Path
-from dataclasses import asdict
 from typing import Dict, Optional
 
 import torch
