@@ -51,7 +51,23 @@ def parse_args() -> argparse.Namespace:
             "output directory (e.g. state.json, confusion matrix images)."
         ),
     )
+    parser.add_argument(
+        "--strip-encoder-prefix",
+        action="store_true",
+        help="Remove the 'encoder.' prefix from all keys in the state_dict."
+    )
     return parser.parse_args()
+
+
+def strip_encoder_prefix(state_dict: dict) -> dict:
+    cleaned = {}
+    for k, v in state_dict.items():
+        if k.startswith("encoder."):
+            new_k = k[len("encoder."):]
+        else:
+            new_k = k
+        cleaned[new_k] = v
+    return cleaned
 
 
 def resolve_checkpoint_path(checkpoint: str) -> Path:
@@ -107,6 +123,9 @@ def main() -> None:
     output_dir = Path(args.output_dir)
 
     state_dict = torch.load(checkpoint_path, map_location="cpu")
+
+    if args.strip_encoder_prefix:
+        state_dict = strip_encoder_prefix(state_dict)
 
     save_safetensors(state_dict, output_dir)
 

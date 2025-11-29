@@ -14,3 +14,6 @@ tqdm>=4.66.0
 safetensors>=0.4.0
 lxml
 cupy
+onnx
+onnxruntime
+onnxscript

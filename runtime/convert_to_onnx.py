@@ -90,6 +90,7 @@ def export_to_onnx(model_dir: Path, onnx_out: Path, device: torch.device) -> Non
             dynamic_axes=dynamic_axes,
             do_constant_folding=True,
             export_params=True,
+            dynamo=False
         )
 
     LOGGER.info("Validating ONNX model")
