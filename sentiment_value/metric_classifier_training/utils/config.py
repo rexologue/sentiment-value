@@ -67,7 +67,6 @@ class CheckpointConfig:
 class MetricValidationConfig:
     recall_at_k: List[int] | None = None
     distance: str = "cos"
-    knn_k: int = 10
 
 
 @dataclass
