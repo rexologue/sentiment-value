@@ -87,8 +87,15 @@ def iter_vector_batches(
 
 def load_shard(shard_path: str, columns: List[str]) -> pd.DataFrame:
     """Load specific columns from a Parquet shard into a DataFrame."""
+    try:
+        table = pq.read_table(shard_path, columns=columns)
+    except KeyError as exc:
+        available = pq.ParquetFile(shard_path).schema.names
+        missing = [col for col in columns if col not in available]
+        raise ValueError(
+            f"Missing columns {missing} in shard {shard_path}. Available columns: {available}"
+        ) from exc
 
-    table = pq.read_table(shard_path, columns=columns)
     return table.to_pandas()
 
 

@@ -83,15 +83,9 @@ def _process_shard(
     global_purity_threshold: float,
     global_max_prob_threshold: float,
 ) -> tuple[pd.DataFrame, int, int, int]:
-    parquet_file = pq.ParquetFile(shard_path)
-    available_columns = set(parquet_file.schema.names)
-
     columns: List[str] = [cfg.text_column, cfg.label_column, cfg.cluster_id_column]
-    optional_cols: List[str] = [
-        col for col in (cfg.max_prob_column, cfg.probs_column) if col and col in available_columns
-    ]
-    for col in optional_cols:
-        if col not in columns:
+    for col in (cfg.max_prob_column, cfg.probs_column):
+        if col and col not in columns:
             columns.append(col)
 
     df = load_shard(shard_path, columns)
