@@ -1,4 +1,6 @@
 model_path: /app/model
+prefer_cuda: true
+enable_compile: false
 host: 0.0.0.0
 port: 8000
 
