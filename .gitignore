@@ -1434,6 +1434,7 @@ CMakeUserPresets.json
 !clustering.example.yaml
 !runtime/docker-compose.example.yaml
 !runtime/config.example.yaml
+!runtime/swagger.yaml
 !Dockerfile.gpu
 
 vllm
