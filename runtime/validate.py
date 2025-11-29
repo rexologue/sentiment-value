@@ -4,13 +4,12 @@ import logging
 from pathlib import Path
 from typing import List
 
-import numpy as np
-import onnxruntime as ort
 import pandas as pd
-from scipy.special import softmax
+import torch
 from sklearn.metrics import accuracy_score, f1_score
 from tqdm import tqdm
-from transformers import AutoTokenizer
+
+from model import OptimizedSequenceClassificationModel
 
 LOGGER = logging.getLogger(__name__)
 
@@ -23,15 +22,27 @@ def setup_logging():
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Validate ONNX sequence classification model")
-    parser.add_argument("--model", required=True, type=Path, help="Path to ONNX model")
+    parser = argparse.ArgumentParser(
+        description="Validate a PyTorch sequence classification model",
+    )
+    parser.add_argument(
+        "--model-dir",
+        required=True,
+        type=Path,
+        help="Path to the Hugging Face model directory",
+    )
     parser.add_argument(
         "--data",
         required=True,
         type=Path,
         help="Dataset file (CSV or Parquet) with 'text' and 'label' columns",
     )
-    parser.add_argument("--device", choices=["cpu", "cuda"], default="cpu", help="Device for inference")
+    parser.add_argument(
+        "--device",
+        choices=["auto", "cpu", "cuda"],
+        default="auto",
+        help="Device preference for inference",
+    )
     parser.add_argument("--batch-size", type=int, default=32, help="Batch size for validation")
     parser.add_argument(
         "--output-json",
@@ -39,22 +50,12 @@ def parse_args():
         default=None,
         help="Optional path to save metrics as JSON",
     )
+    parser.add_argument(
+        "--disable-compile",
+        action="store_true",
+        help="Disable torch.compile even if available",
+    )
     return parser.parse_args()
-
-
-def _select_providers(device: str) -> List[str]:
-    if device == "cuda":
-        providers = ["CUDAExecutionProvider", "CPUExecutionProvider"]
-    else:
-        providers = ["CPUExecutionProvider"]
-    available = ort.get_available_providers()
-    selected = [p for p in providers if p in available]
-    if not selected:
-        LOGGER.warning("Requested providers %s not available. Falling back to CPU.", providers)
-        return ["CPUExecutionProvider"]
-    if providers[0] not in selected:
-        LOGGER.warning("Primary provider %s unavailable. Using %s instead.", providers[0], selected[0])
-    return selected
 
 
 def load_dataset(data_path: Path) -> pd.DataFrame:
@@ -65,13 +66,13 @@ def load_dataset(data_path: Path) -> pd.DataFrame:
     raise ValueError(f"Unsupported dataset format: {data_path.suffix}")
 
 
-def load_resources(model_path: Path, device: str):
-    model_dir = model_path.parent
-    tokenizer = AutoTokenizer.from_pretrained(model_dir)
-    providers = _select_providers(device)
-    LOGGER.info("Initializing ONNX Runtime session with providers: %s", providers)
-    session = ort.InferenceSession(str(model_path), providers=providers)
-    return tokenizer, session
+def load_model(model_dir: Path, device_preference: str, enable_compile: bool):
+    prefer_cuda = device_preference in {"auto", "cuda"}
+    return OptimizedSequenceClassificationModel(
+        model_dir,
+        prefer_cuda=prefer_cuda,
+        enable_compile=enable_compile,
+    )
 
 
 def iterate_batches(texts: List[str], labels: List[int], batch_size: int):
@@ -80,7 +81,12 @@ def iterate_batches(texts: List[str], labels: List[int], batch_size: int):
         yield texts[start:end], labels[start:end]
 
 
-def run_validation(tokenizer, session: ort.InferenceSession, texts: List[str], labels: List[int], batch_size: int):
+def run_validation(
+    model: OptimizedSequenceClassificationModel,
+    texts: List[str],
+    labels: List[int],
+    batch_size: int,
+):
     all_logits = []
     progress = tqdm(
         iterate_batches(texts, labels, batch_size),
@@ -88,24 +94,16 @@ def run_validation(tokenizer, session: ort.InferenceSession, texts: List[str], l
         desc="Batches",
     )
     for batch_texts, _ in progress:
-        inputs = tokenizer(
-            batch_texts,
-            return_tensors="np",
-            truncation=True,
-            padding=True,
-        )
-        ort_inputs = {"input_ids": inputs["input_ids"], "attention_mask": inputs["attention_mask"]}
-        outputs = session.run(None, ort_inputs)
-        logits = outputs[0]
-        all_logits.append(logits)
-    return np.concatenate(all_logits, axis=0)
+        batch_logits = model.logits(batch_texts, batch_size=batch_size)
+        all_logits.append(batch_logits)
+    return torch.cat(all_logits, dim=0)
 
 
 def main():
     setup_logging()
     args = parse_args()
 
-    tokenizer, session = load_resources(args.model, args.device)
+    model = load_model(args.model_dir, args.device, not args.disable_compile)
     df = load_dataset(args.data)
     if not {"text", "label"}.issubset(df.columns):
         raise ValueError("Dataset must contain 'text' and 'label' columns")
@@ -113,9 +111,9 @@ def main():
     texts = df["text"].astype(str).tolist()
     labels = df["label"].tolist()
 
-    logits = run_validation(tokenizer, session, texts, labels, args.batch_size)
-    probabilities = softmax(logits, axis=-1)
-    predictions = np.argmax(probabilities, axis=-1)
+    logits = run_validation(model, texts, labels, args.batch_size)
+    probabilities = torch.softmax(logits, dim=-1)
+    predictions = torch.argmax(probabilities, dim=-1).tolist()
 
     acc = accuracy_score(labels, predictions)
     macro_f1 = f1_score(labels, predictions, average="macro")
