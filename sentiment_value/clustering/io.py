@@ -1,4 +1,4 @@
-from __future__ import annotations
+"""I/O utilities for clustering shards."""
 
 import os
 import uuid
@@ -10,9 +10,11 @@ import pyarrow.parquet as pq
 
 
 def list_parquet_shards(input_dir: str) -> List[str]:
+    """Return sorted Parquet shard paths from a directory."""
+
     if not os.path.isdir(input_dir):
         raise FileNotFoundError(f"Input directory not found: {input_dir}")
-    
+
     shards = [
         os.path.join(input_dir, name)
         for name in sorted(os.listdir(input_dir))
@@ -23,9 +25,11 @@ def list_parquet_shards(input_dir: str) -> List[str]:
 
 
 def _validate_vector(vec: object, expected_dim: Optional[int]) -> Tuple[Optional[np.ndarray], Optional[int]]:
+    """Validate and coerce a vector, ensuring consistent dimensionality."""
+
     if vec is None:
         return None, expected_dim
-    
+
     if isinstance(vec, (list, tuple)):
         arr = np.asarray(vec, dtype=np.float32)
 
@@ -34,7 +38,7 @@ def _validate_vector(vec: object, expected_dim: Optional[int]) -> Tuple[Optional
             arr = np.asarray(vec, dtype=np.float32)
         except Exception:
             return None, expected_dim
-        
+
     if arr.ndim != 1:
         return None, expected_dim
     if arr.size == 0:
@@ -43,7 +47,7 @@ def _validate_vector(vec: object, expected_dim: Optional[int]) -> Tuple[Optional
         expected_dim = arr.size
     if arr.size != expected_dim:
         return None, expected_dim
-    
+
     return arr, expected_dim
 
 
@@ -55,6 +59,8 @@ def iter_vector_batches(
     sample_limit: Optional[int],
     logger,
 ) -> Tuple[Iterable[np.ndarray], Optional[int], int]:
+    """Yield batches of vectors from a shard, validating shape as we stream."""
+
     file = pq.ParquetFile(shard_path)
     yielded = 0
 
@@ -74,20 +80,32 @@ def iter_vector_batches(
 
         if vectors:
             yield np.stack(vectors, axis=0), expected_dim, len(vectors)
-            
+
         if sample_limit is not None and yielded >= sample_limit:
             break
 
 
 def load_shard(shard_path: str, columns: List[str]) -> pd.DataFrame:
+    """Load specific columns from a Parquet shard into a DataFrame."""
+
     table = pq.read_table(shard_path, columns=columns)
     return table.to_pandas()
 
 
 def write_parquet_atomic(df: pd.DataFrame, output_path: str) -> None:
+    """Write Parquet atomically by swapping a temporary file into place."""
+
     directory = os.path.dirname(output_path) or "."
     os.makedirs(directory, exist_ok=True)
     temp_name = f".{uuid.uuid4().hex}.parquet.tmp"
     temp_path = os.path.join(directory, temp_name)
     df.to_parquet(temp_path, index=False)
     os.replace(temp_path, output_path)
+
+
+__all__ = [
+    "list_parquet_shards",
+    "iter_vector_batches",
+    "load_shard",
+    "write_parquet_atomic",
+]

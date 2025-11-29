@@ -1,4 +1,6 @@
-import argparse
+"""Normalize CLS vectors and apply PCA using YAML configuration."""
+from __future__ import annotations
+
 import os
 from glob import glob
 from typing import Iterable, List, Optional, Sequence
@@ -9,13 +11,19 @@ import numpy as np
 import pandas as pd
 from tqdm.auto import tqdm
 
+from sentiment_value.clustering.config import NormalizePCAConfig, parse_config_path
+
 
 def discover_shards(input_dir: str) -> List[str]:
+    """Return a sorted list of Parquet shards in ``input_dir``."""
+
     pattern = os.path.join(input_dir, "*.parquet")
     return sorted(glob(pattern))
 
 
 def count_rows(shard_paths: Sequence[str]) -> int:
+    """Count total rows across shards to size the progress bar."""
+
     total = 0
     for path in tqdm(shard_paths, desc="Counting rows", unit="shard"):
         df = pd.read_parquet(path, columns=["cls"])
@@ -23,36 +31,9 @@ def count_rows(shard_paths: Sequence[str]) -> int:
     return total
 
 
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Normalize CLS vectors and apply PCA across shards.")
-    parser.add_argument("--input_dir", required=True, help="Directory containing input parquet shards.")
-    parser.add_argument(
-        "--output_dir",
-        help="Directory to write updated shards. Defaults to input_dir when --overwrite is set.",
-    )
-    parser.add_argument("--n_components", type=int, default=50, help="Number of PCA components.")
-    parser.add_argument(
-        "--batch_size", type=int, default=1024, help="Batch size for normalization and PCA transformation.")
-    parser.add_argument(
-        "--device",
-        choices=["cuda", "cpu"],
-        default="cuda" if importlib.util.find_spec("cupy") is not None else "cpu",
-        help="Device to run normalization on (PCA may still be CPU-bound).",
-    )
-    parser.add_argument(
-        "--overwrite",
-        action="store_true",
-        help="Overwrite shards in place. When set, output_dir defaults to input_dir.",
-    )
-    parser.add_argument(
-        "--use_gpu_pca",
-        action="store_true",
-        help="Attempt GPU-accelerated PCA with cuML when available (loads all data into memory).",
-    )
-    return parser.parse_args()
-
-
 def resolve_array_module(device: str):
+    """Resolve the array module (NumPy or CuPy) and optional cuML PCA class."""
+
     if device != "cuda":
         return np, None, None
 
@@ -68,12 +49,16 @@ def resolve_array_module(device: str):
 
 
 def l2_normalize(batch, xp):
+    """Apply L2 normalization row-wise for a batch of vectors."""
+
     norms = xp.linalg.norm(batch, axis=1, keepdims=True)
     norms = xp.maximum(norms, xp.asarray(1e-12, dtype=batch.dtype))
     return batch / norms
 
 
 def iterate_batches(cls_values: Sequence[Sequence[float]], batch_size: int, xp) -> Iterable:
+    """Yield mini-batches of CLS vectors as arrays backed by ``xp``."""
+
     batch: List[Sequence[float]] = []
     for row in cls_values:
         batch.append(row)
@@ -96,6 +81,8 @@ def fit_pca(
     total_rows: Optional[int] = None,
     use_gpu_pca: bool = False,
 ):
+    """Fit PCA incrementally (CPU) or fully on GPU depending on configuration."""
+
     if use_gpu_pca and cupy_module is not None and cuml_pca_cls is not None:
         normalized_batches = []
         progress = tqdm(total=total_rows, desc="Fitting PCA (GPU)", unit="vec")
@@ -137,6 +124,8 @@ def transform_shard(
     cupy_module,
     use_gpu_pca: bool,
 ):
+    """Normalize and transform a shard, then persist the PCA vectors."""
+
     df = pd.read_parquet(shard_path)
     cls_values = df["cls"].tolist()
     pca_results: List[Sequence[float]] = []
@@ -158,44 +147,52 @@ def transform_shard(
     df.to_parquet(output_path, index=False)
 
 
-def main():
-    args = parse_args()
+def run(cfg: NormalizePCAConfig) -> None:
+    """Execute normalization and PCA using configuration from YAML."""
 
-    if args.overwrite and args.output_dir is None:
-        args.output_dir = args.input_dir
-    if not args.overwrite and args.output_dir is None:
-        raise ValueError("--output_dir must be provided when not overwriting input shards.")
+    if cfg.overwrite and cfg.output_dir is None:
+        cfg.output_dir = cfg.input_dir
+    if not cfg.overwrite and cfg.output_dir is None:
+        raise ValueError("output_dir must be provided when not overwriting input shards.")
 
-    xp, cupy_module, cuml_pca_cls = resolve_array_module(args.device)
-    shard_paths = discover_shards(args.input_dir)
+    xp, cupy_module, cuml_pca_cls = resolve_array_module(cfg.device)
+    shard_paths = discover_shards(cfg.input_dir)
     if not shard_paths:
-        raise FileNotFoundError(f"No parquet shards found in {args.input_dir}")
+        raise FileNotFoundError(f"No parquet shards found in {cfg.input_dir}")
 
     total_rows = count_rows(shard_paths)
     pca_model = fit_pca(
         shard_paths,
-        batch_size=args.batch_size,
-        n_components=args.n_components,
+        batch_size=cfg.batch_size,
+        n_components=cfg.n_components,
         xp=xp,
         cupy_module=cupy_module,
         cuml_pca_cls=cuml_pca_cls,
         total_rows=total_rows,
-        use_gpu_pca=args.use_gpu_pca,
+        use_gpu_pca=cfg.use_gpu_pca,
     )
 
-    os.makedirs(args.output_dir, exist_ok=True)
+    os.makedirs(cfg.output_dir, exist_ok=True)
     for shard_path in shard_paths:
         filename = os.path.basename(shard_path)
-        output_path = os.path.join(args.output_dir, filename)
+        output_path = os.path.join(cfg.output_dir, filename)
         transform_shard(
             shard_path,
             output_path,
             pca_model,
-            batch_size=args.batch_size,
+            batch_size=cfg.batch_size,
             xp=xp,
             cupy_module=cupy_module,
-            use_gpu_pca=args.use_gpu_pca,
+            use_gpu_pca=cfg.use_gpu_pca,
         )
+
+
+def main(argv: Optional[Sequence[str]] = None) -> None:
+    """CLI entrypoint for the normalize and PCA stage."""
+
+    args = parse_config_path(argv)
+    cfg = NormalizePCAConfig.from_yaml(args.config)
+    run(cfg)
 
 
 if __name__ == "__main__":

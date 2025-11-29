@@ -13,23 +13,27 @@ from transformers import (
     get_cosine_schedule_with_warmup,
     get_linear_schedule_with_warmup,
 )
-from transformers.utils import is_flash_attn_2_available # type: ignore
+from transformers.utils import is_flash_attn_2_available  # type: ignore
 
-from sentiment_value.training.trainer import Trainer
+from sentiment_value.classifier_training.trainer import Trainer
 from sentiment_value.utils.logger import NeptuneLogger
 from sentiment_value.utils.config import Config, load_config
-from sentiment_value.training.checkpoint_manager import CheckpointManager
+from sentiment_value.classifier_training.checkpoint_manager import CheckpointManager
 from sentiment_value.utils.training import ensure_dir, prepare_device, set_seed
-from sentiment_value.data.dataset import DatasetConfig, create_dataloaders, load_datasets
+from sentiment_value.classifier_training.data import DatasetConfig, create_dataloaders, load_datasets
 
 
 def parse_args():
+    """Parse CLI arguments for the classifier training script."""
+
     parser = argparse.ArgumentParser(description="Train a text classifier.")
     parser.add_argument("--config", type=str, required=True, help="Path to YAML config file")
     return parser.parse_args()
 
 
 def build_scheduler(optimizer, scheduler_config, num_training_steps: int):
+    """Construct the configured learning rate scheduler."""
+
     total_steps = scheduler_config.num_training_steps or num_training_steps
     if total_steps is None:
         raise ValueError("num_training_steps must be provided to configure the scheduler.")
@@ -52,6 +56,8 @@ def build_scheduler(optimizer, scheduler_config, num_training_steps: int):
 
 
 def main():
+    """Load configuration, prepare data/model, and launch training."""
+
     args = parse_args()
     cfg: Config = load_config(args.config)
 
@@ -148,7 +154,7 @@ def main():
 
     try:
         trainer.train(cfg.training.num_epochs)
-        
+
     finally:
         logger.stop()
 
