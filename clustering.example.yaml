@@ -57,6 +57,5 @@ update_dataset:
   label_column: label
   cluster_id_column: cluster_id
   probs_column: probs
-  max_prob_column: max_prob
   progress: true
   log_level: INFO
