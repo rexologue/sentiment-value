@@ -1,0 +1,42 @@
+# Example configuration for the MiniBatchKMeans clustering pipeline.
+# Copy this file to clustering.yaml and edit the paths and parameters as needed.
+
+# === Paths ===
+# Directory containing input Parquet shards with CLS embeddings.
+input_dir: "data/shards"
+# Directory where enriched shards with centroid assignments will be written.
+output_dir: "data/output_shards"
+# Parquet file to store the learned centroids (centroid_id + center vector).
+centroids_out: "artifacts/centroids.parquet"
+# Path to persist the trained clustering model (joblib format).
+model_out: "artifacts/mini_batch_kmeans.joblib"
+# Pipeline mode: `train` trains the model then predicts; `predict` only assigns centroids using an existing model.
+run_mode: "train"  # options: train, predict
+
+# === Data settings ===
+# Column name inside each shard that stores the PCA-reduced CLS embedding.
+pca_column: "cls_pca"
+
+# === Model settings ===
+# Number of clusters for MiniBatchKMeans.
+n_clusters: 200
+# Number of samples per mini-batch.
+batch_size: 4096
+# Maximum number of iterations used internally by MiniBatchKMeans.
+max_iter: 100
+# Number of samples randomly chosen for centroid initialization.
+init_size: 100000
+# Random seed for deterministic behavior.
+random_state: 42
+# If true, attempt to use CuML's GPU MiniBatchKMeans; falls back to CPU if unavailable.
+gpu: false
+
+# === Runtime settings ===
+# Number of worker processes for prediction (1 disables multiprocessing).
+num_workers: 4
+# Optional cap on the number of samples used for training. Set to null to use all samples.
+sample_limit: null
+# Whether to show tqdm progress bars.
+progress: true
+# Logging level (DEBUG, INFO, WARNING, ERROR).
+log_level: "INFO"

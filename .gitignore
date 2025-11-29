@@ -1431,5 +1431,6 @@ CMakeUserPresets.json
 *.yaml
 !config.example.yaml
 !docker-compose.example.yaml
+!clustering.example.yaml
 
 vllm
