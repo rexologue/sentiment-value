@@ -1,4 +1,13 @@
-import argparse
+"""Supervised inference for building clustering shards.
+
+This script reads text data from a Parquet file, runs batched inference
+with a sequence classification model to capture CLS embeddings, and
+writes the results into sharded Parquet outputs. Configuration is loaded
+exclusively from the ``supervise`` block of the YAML file passed via
+``--config``.
+"""
+from __future__ import annotations
+
 import math
 import os
 from typing import List, Optional, Sequence, Set, Tuple
@@ -9,42 +18,12 @@ from torch.utils.data import DataLoader, Dataset
 from tqdm.auto import tqdm
 from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
-
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Run batched inference and save clustered features.")
-    parser.add_argument("--model_name_or_path", required=True, help="Path or identifier of the model to load.")
-    parser.add_argument(
-        "--input",
-        "--input_parquet",
-        dest="input_parquet",
-        required=True,
-        help="Input Parquet file containing a 'text' column.",
-    )
-    parser.add_argument("--output_dir", required=True, help="Directory to write output shards.")
-    parser.add_argument("--batch_size", type=int, default=32, help="Batch size for inference.")
-    parser.add_argument(
-        "--device",
-        choices=["cuda", "cpu"],
-        default="cuda" if torch.cuda.is_available() else "cpu",
-        help="Device to run inference on.",
-    )
-    parser.add_argument("--num_workers", type=int, default=0, help="Number of DataLoader workers.")
-    parser.add_argument("--num_shards", type=int, default=1, help="Number of output shards to split results into.")
-    parser.add_argument(
-        "--dtype",
-        default="float16",
-        choices=["float16", "bfloat16", "float32"],
-        help="Floating point precision to load the model with.",
-    )
-    parser.add_argument(
-        "--resume",
-        action="store_true",
-        help="Resume inference by skipping shards that already exist in the output directory.",
-    )
-    return parser.parse_args()
+from sentiment_value.clustering.config import SuperviseConfig, parse_config_path
 
 
 class TextDataset(Dataset):
+    """Simple dataset wrapper around a sequence of raw texts."""
+
     def __init__(self, texts: Sequence[str]):
         self.texts = list(texts)
 
@@ -56,11 +35,15 @@ class TextDataset(Dataset):
 
 
 def load_data(parquet_path: str) -> List[str]:
+    """Load the ``text`` column from a Parquet shard."""
+
     df = pd.read_parquet(parquet_path, columns=["text"])
     return df["text"].tolist()
 
 
 def collate_with_texts(tokenizer):
+    """Collate function that preserves raw text alongside tokenized tensors."""
+
     def _collate(batch_texts: List[str]) -> Tuple[List[str], dict]:
         encoded = tokenizer(
             batch_texts,
@@ -82,6 +65,8 @@ def run_inference(
     num_workers: int,
     progress: Optional[tqdm] = None,
 ):
+    """Run batched inference to collect CLS vectors and predictions."""
+
     dataset = TextDataset(texts)
     loader = DataLoader(
         dataset,
@@ -131,13 +116,17 @@ def run_inference(
     return results
 
 
-def save_shard(results: List[dict], output_dir: str, shard_idx: int):
+def save_shard(results: List[dict], output_dir: str, shard_idx: int) -> None:
+    """Persist a single shard to disk using the conventional filename pattern."""
+
     shard_df = pd.DataFrame(results, columns=["text", "cls", "probs", "label"])
     shard_path = os.path.join(output_dir, f"part-{shard_idx:05d}.parquet")
     shard_df.to_parquet(shard_path, index=False)
 
 
 def discover_existing_shards(output_dir: str) -> Set[int]:
+    """Identify shard indices already present on disk for resume support."""
+
     if not os.path.isdir(output_dir):
         return set()
 
@@ -150,42 +139,36 @@ def discover_existing_shards(output_dir: str) -> Set[int]:
     return shard_indices
 
 
-def main():
-    args = parse_args()
+def run(cfg: SuperviseConfig) -> None:
+    """Execute supervised inference based on the provided configuration."""
 
-    torch_dtype = getattr(torch, args.dtype)
-    if args.device == "cpu" and torch_dtype != torch.float32:
+    torch_dtype = getattr(torch, cfg.dtype)
+    if cfg.device == "cpu" and torch_dtype != torch.float32:
         print("CPU execution detected; overriding dtype to float32 for compatibility.")
         torch_dtype = torch.float32
 
     try:
         tokenizer = AutoTokenizer.from_pretrained(
-            args.model_name_or_path, use_fast=True, fix_mistral_regex=True
+            cfg.model_name_or_path, use_fast=True, fix_mistral_regex=True
         )
     except TypeError:
-        # Older versions of `tokenizers` use immutable pre-tokenizers, which makes the
-        # `fix_mistral_regex` patch incompatible. Retry without applying the fix so
-        # inference can proceed on those environments.
         print(
             "Encountered TypeError while applying mistral regex fix; "
             "retrying with fix_mistral_regex=False for tokenizer compatibility."
         )
         tokenizer = AutoTokenizer.from_pretrained(
-            args.model_name_or_path, use_fast=True, fix_mistral_regex=False
+            cfg.model_name_or_path, use_fast=True, fix_mistral_regex=False
         )
     model = AutoModelForSequenceClassification.from_pretrained(
-        args.model_name_or_path, torch_dtype=torch_dtype
+        cfg.model_name_or_path, torch_dtype=torch_dtype
     )
-    device = torch.device(args.device if args.device == "cpu" or torch.cuda.is_available() else "cpu")
+    device = torch.device(cfg.device if cfg.device == "cpu" or torch.cuda.is_available() else "cpu")
     model.to(device)
 
-    texts = load_data(args.input_parquet)
-    if args.num_shards < 1:
-        raise ValueError("num_shards must be at least 1")
-
-    shard_size = math.ceil(len(texts) / args.num_shards)
-    os.makedirs(args.output_dir, exist_ok=True)
-    existing_shards = discover_existing_shards(args.output_dir) if args.resume else set()
+    texts = load_data(cfg.input_parquet)
+    shard_size = math.ceil(len(texts) / cfg.num_shards)
+    os.makedirs(cfg.output_dir, exist_ok=True)
+    existing_shards = discover_existing_shards(cfg.output_dir) if cfg.resume else set()
 
     processed = 0
     for shard_idx in existing_shards:
@@ -193,8 +176,8 @@ def main():
         end = min(start + shard_size, len(texts))
         processed += max(0, end - start)
 
-    with tqdm(total=len(texts), initial=processed, desc="Inference", unit="text") as progress:
-        for shard_idx in range(args.num_shards):
+    with tqdm(total=len(texts), initial=processed, desc="Inference", unit="text", disable=not cfg.progress) as progress:
+        for shard_idx in range(cfg.num_shards):
             start = shard_idx * shard_size
             end = min(start + shard_size, len(texts))
             if start >= end:
@@ -206,9 +189,24 @@ def main():
 
             shard_texts = texts[start:end]
             shard_results = run_inference(
-                model, tokenizer, shard_texts, args.batch_size, device.type, args.num_workers, progress
+                model,
+                tokenizer,
+                shard_texts,
+                cfg.batch_size,
+                device.type,
+                cfg.num_workers,
+                progress,
             )
-            save_shard(shard_results, args.output_dir, shard_idx)
+            save_shard(shard_results, cfg.output_dir, shard_idx)
+
+
+def main(argv: Optional[Sequence[str]] = None) -> None:
+    """CLI entrypoint that loads configuration and runs inference."""
+
+    args = parse_config_path(argv)
+    # Each script reads only its own block to avoid coupling between stages.
+    cfg = SuperviseConfig.from_yaml(args.config)
+    run(cfg)
 
 
 if __name__ == "__main__":
