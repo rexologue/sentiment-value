@@ -8,14 +8,14 @@ services:
     environment:
       - SENTIMENT_CONFIG_PATH=/app/config.yaml
     volumes:
-      - /path/to/model_dir:/app/model:ro
-      - /path/to/runtime/config.yaml:/app/config.yaml:ro
+      - /home/user5/text/.models/mm-bert-3:/app/model:ro
+      - /home/user5/text/sentiment-value/runtime/config.yaml:/app/config.yaml:ro
     deploy:
       resources:
         reservations:
           devices:
             - driver: nvidia
-              count: all
+              device_ids: ["3"]
               capabilities: [gpu]
     restart: unless-stopped
 
@@ -28,6 +28,6 @@ services:
     environment:
       - SENTIMENT_CONFIG_PATH=/app/config.yaml
     volumes:
-      - /path/to/model_dir:/app/model:ro
-      - /path/to/runtime/config.yaml:/app/config.yaml:ro
+      - /home/user5/text/.models/mm-bert-3:/app/model:ro
+      - /home/user5/text/sentiment-value/runtime/config.yaml:/app/config.yaml:ro
     restart: unless-stopped

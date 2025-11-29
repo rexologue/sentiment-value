@@ -15,7 +15,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field, ValidationError
 from starlette.concurrency import run_in_threadpool
 
-from runtime.model import ModelWrapper, OptimizationInfo, load_model
+from model import ModelWrapper, OptimizationInfo, load_model
 
 LOGGER = logging.getLogger(__name__)
 CONFIG_ENV = "SENTIMENT_CONFIG_PATH"
@@ -95,7 +95,7 @@ async def lifespan(app: FastAPI):
         LOGGER.error("Model path does not exist: %s", model_path)
         raise FileNotFoundError(f"Model path does not exist: {model_path}")
 
-    model = load_model(str(model_path))
+    model = load_model(str(model_path), enable_compile=False)
     LOGGER.info(
         "Loaded model at %s on device=%s with attention=%s compiled=%s",
         model_path,

@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Union
+from typing import Any, Dict, List, Optional, Sequence, Union
 
 import torch
 from transformers import AutoConfig, AutoModelForSequenceClassification, AutoTokenizer

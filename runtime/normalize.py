@@ -3,13 +3,8 @@ from __future__ import annotations
 import re
 import html
 import unicodedata
-from pathlib import Path
 from typing import Optional
 from dataclasses import dataclass
-
-import argparse
-import pandas as pd
-from tqdm import tqdm
 
 # --- Опциональные зависимости: ftfy и bs4 ---
 

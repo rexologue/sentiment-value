@@ -1,13 +1,39 @@
-FROM pytorch/pytorch:2.8.0-cuda12.8-cudnn-runtime
+FROM pytorch/pytorch:2.9.1-cuda12.8-cudnn9-runtime
 
 WORKDIR /app
 
-COPY runtime/api-requirements.txt runtime/api-requirements.txt
-RUN pip install --no-cache-dir -r runtime/api-requirements.txt
-RUN python -m pip install ninja && python -m pip install --no-build-isolation -v flash-attn
+COPY . .
 
-COPY .. .
+# --- Install C/C++ build toolchain (для всего, что может собираться из C/C++) ---
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    g++ \
+    cmake \
+    pkg-config \
+    git \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# --- Основные зависимости API ---
+RUN python -m pip install --no-cache-dir -r /app/api-requirements.txt
+
+# --- Попытка поставить flash-attn из prebuilt wheel (опционально) ---
+# Wheel собран под: Linux x86_64, CUDA 12.8, PyTorch 2.9, Python 3.11
+# https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/tag/v0.4.22
+ENV FLASH_ATTN_WHEEL_URL="https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/download/v0.4.22/flash_attn-2.8.1+cu128torch2.9-cp311-cp311-linux_x86_64.whl"
+
+RUN python -m pip install ninja && \
+    LOG=/app/flash_attn_install.log && \
+    echo "Flash-Attn install log will be stored at ${LOG}" && \
+    ( \
+        echo "Installing flash-attn from ${FLASH_ATTN_WHEEL_URL}" > "${LOG}"; \
+        python -m pip install --no-build-isolation "${FLASH_ATTN_WHEEL_URL}" >> "${LOG}" 2>&1 && \
+        echo "flash-attn successfully installed" >> "${LOG}" && \
+        echo "flash-attn successfully installed"; \
+    ) || \
+    ( \
+        echo "flash-attn installation failed, see ${LOG} for details"; \
+    )
 
 ENV SENTIMENT_CONFIG_PATH=/app/config.yaml
 
-CMD ["python", "-m", "runtime.app"]
+CMD ["python", "-m", "app"]
