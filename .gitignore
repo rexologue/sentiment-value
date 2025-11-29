@@ -1430,6 +1430,7 @@ CMakeUserPresets.json
 
 *.yaml
 !config.example.yaml
+!metric_classifier_training.example.yaml
 !docker-compose.example.yaml
 !clustering.example.yaml
 

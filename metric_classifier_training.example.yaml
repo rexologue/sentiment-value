@@ -1,0 +1,50 @@
+model_name: jhu-clsp/mmBERT-base
+
+data:
+  parquet_path: data/dataset.parquet
+  val_ratio: 0.1
+  num_workers: 2
+  upsample: false
+
+training:
+  batch_size: 8
+  num_epochs: 3
+  gradient_accumulation_steps: 1
+  max_seq_length: 256
+  mixed_precision: false
+  attention_implementation: flash_attention_2
+  gradient_clip_val: 1.0
+  seed: 42
+  resume_from: null
+  supcon_temperature: 0.1
+  classification_loss_weight: 1.0
+  metric_loss_weight: 1.0
+
+optimizer:
+  learning_rate: 5e-5
+  weight_decay: 0.01
+
+scheduler:
+  warmup_steps: 0
+  num_training_steps: null
+  name: linear
+  num_cycles: 0.5
+
+checkpointing:
+  checkpoints_dir: checkpoints
+  save_every_n_bathces: 500
+  save_best_by: f1  # options: loss, acc, f1
+
+metric_validation:
+  recall_at_k: [1, 10, 100]
+  distance: cos  # options: cos, l2
+  knn_k: 10
+
+neptune:
+  project: your-username/your-project
+  api_token: null
+  experiment_name: metric-classification-run
+  run_id: null
+  tags: [metric-learning, demo]
+  dependencies_path: null
+  env_path: .env
