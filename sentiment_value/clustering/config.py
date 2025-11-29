@@ -245,8 +245,7 @@ class UpdateDatasetConfig:
     text_column: str = "text"
     label_column: str = "label"
     cluster_id_column: str = "cluster_id"
-    probs_column: Optional[str] = "probs"
-    max_prob_column: Optional[str] = "max_prob"
+    probs_column: str = "probs"
     progress: bool = True
     log_level: str = "INFO"
     extra_fields: Dict[str, Any] = field(default_factory=dict, repr=False)
@@ -268,8 +267,8 @@ class UpdateDatasetConfig:
             raise ValueError("label_column must be provided")
         if not self.cluster_id_column:
             raise ValueError("cluster_id_column must be provided")
-        if not (self.max_prob_column or self.probs_column):
-            raise ValueError("At least one of max_prob_column or probs_column must be set")
+        if not self.probs_column:
+            raise ValueError("probs_column must be provided")
         self.log_level = self.log_level.upper()
 
     @classmethod

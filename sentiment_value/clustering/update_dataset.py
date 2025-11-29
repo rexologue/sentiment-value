@@ -51,21 +51,7 @@ def _max_prob_from_value(value: object) -> float:
     if array.size == 0:
         return float("nan")
 
-    return float(array.max())
-
-
-def _resolve_max_prob_column(df: pd.DataFrame, cfg: UpdateDatasetConfig) -> pd.Series:
-    if cfg.max_prob_column and cfg.max_prob_column in df.columns:
-        return df[cfg.max_prob_column]
-
-    if cfg.probs_column and cfg.probs_column in df.columns:
-        return df[cfg.probs_column].apply(_max_prob_from_value)
-
-    options = [col for col in (cfg.max_prob_column, cfg.probs_column) if col]
-    raise ValueError(
-        "None of the probability columns are present in shard. Expected one of: "
-        f"{options or '[no columns configured]'}"
-    )
+    return float(np.max(array))
 
 
 def _validate_columns(df: pd.DataFrame, required: Iterable[str], shard_path: str) -> None:
@@ -84,12 +70,15 @@ def _process_shard(
     global_max_prob_threshold: float,
 ) -> tuple[pd.DataFrame, int, int, int]:
     columns: List[str] = [cfg.text_column, cfg.label_column, cfg.cluster_id_column]
-    for col in (cfg.max_prob_column, cfg.probs_column):
-        if col and col not in columns:
-            columns.append(col)
+    if cfg.probs_column not in columns:
+        columns.append(cfg.probs_column)
 
     df = load_shard(shard_path, columns)
-    _validate_columns(df, [cfg.text_column, cfg.label_column, cfg.cluster_id_column], shard_path)
+    _validate_columns(
+        df,
+        [cfg.text_column, cfg.label_column, cfg.cluster_id_column, cfg.probs_column],
+        shard_path,
+    )
 
     total_rows = len(df)
     df["purity"] = df[cfg.cluster_id_column].map(purity_map)
@@ -98,8 +87,7 @@ def _process_shard(
     dropped_purity = int(total_rows - purity_mask.sum())
     df = df[purity_mask].copy()
 
-    max_prob_series = _resolve_max_prob_column(df, cfg)
-    df["max_prob"] = max_prob_series
+    df["max_prob"] = df[cfg.probs_column].apply(_max_prob_from_value)
 
     max_prob_mask = df["max_prob"] >= global_max_prob_threshold
     dropped_max_prob = int(len(df) - max_prob_mask.sum())
