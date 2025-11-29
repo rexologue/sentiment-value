@@ -142,7 +142,7 @@ class TrainConfig:
     model_out: str
     run_mode: str = "train"
     pca_column: str = "pca"
-    centroid_column: str = "centroid_id"
+    centroid_column: str = "cluster_id"
     n_clusters: int = 200
     batch_size: int = 4096
     max_iter: int = 100
@@ -191,6 +191,46 @@ class TrainConfig:
         return cfg
 
 
+@dataclass
+class PurityCounterConfig:
+    """Configuration for computing cluster purity metrics."""
+
+    shards_dir: str
+    centroids_path: str
+    teacher_label_column: str = "teacher_label"
+    cluster_column: str = "cluster_id"
+    progress: bool = True
+    log_level: str = "INFO"
+    extra_fields: Dict[str, Any] = field(default_factory=dict, repr=False)
+
+    def validate(self) -> None:
+        if not self.shards_dir:
+            raise ValueError("shards_dir must be provided")
+        if not self.centroids_path:
+            raise ValueError("centroids_path must be provided")
+        if not self.teacher_label_column:
+            raise ValueError("teacher_label_column must be provided")
+        if not self.cluster_column:
+            raise ValueError("cluster_column must be provided")
+        self.log_level = self.log_level.upper()
+
+    @classmethod
+    def from_yaml(cls, config_path: str) -> "PurityCounterConfig":
+        data = _load_block(config_path, "purity_counter")
+        known_fields = {field.name for field in cls.__dataclass_fields__.values()}
+        init_kwargs: Dict[str, Any] = {}
+        extras: Dict[str, Any] = {}
+        for key, value in data.items():
+            if key in known_fields:
+                init_kwargs[key] = value
+            else:
+                extras[key] = value
+
+        cfg = cls(**init_kwargs, extra_fields=extras)
+        cfg.validate()
+        return cfg
+
+
 def parse_config_path(argv: Optional[Any] = None) -> argparse.Namespace:
     """Parse a single ``--config`` argument from the CLI.
 
@@ -210,5 +250,6 @@ __all__ = [
     "SuperviseConfig",
     "NormalizePCAConfig",
     "TrainConfig",
+    "PurityCounterConfig",
     "parse_config_path",
 ]

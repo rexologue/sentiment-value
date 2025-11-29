@@ -25,7 +25,7 @@ train:
   model_out: data/clustering/centroids/kmeans.joblib
   run_mode: train  # options: train, predict
   pca_column: pca
-  centroid_column: centroid_id
+  centroid_column: cluster_id
   n_clusters: 200
   batch_size: 4096
   max_iter: 100
@@ -34,5 +34,13 @@ train:
   gpu: false
   num_workers: 1
   sample_limit: null
+  progress: true
+  log_level: INFO
+
+purity_counter:
+  shards_dir: data/clustering/pca
+  centroids_path: data/clustering/centroids/centroids.parquet
+  teacher_label_column: teacher_label
+  cluster_column: cluster_id
   progress: true
   log_level: INFO

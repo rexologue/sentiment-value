@@ -119,13 +119,13 @@ def _extract_cluster_centers(model) -> np.ndarray:
     return centers
 
 
-def save_centroids(model, path: str) -> None:
+def save_centroids(model, path: str, centroid_column: str = "cluster_id") -> None:
     """Persist cluster centroids with their identifiers to Parquet."""
 
     centers = _extract_cluster_centers(model)
     df = pd.DataFrame(
         {
-            "centroid_id": np.arange(len(centers), dtype=np.int64),
+            centroid_column: np.arange(len(centers), dtype=np.int64),
             "center": centers.tolist(),
         }
     )
@@ -194,6 +194,13 @@ def _predict_for_shard(
     centroid_col = np.full(len(df), -1, dtype=np.int64)
     for pos, row_idx in enumerate(valid_indices):
         centroid_col[row_idx] = int(preds[pos])
+
+    if centroid_column in df.columns:
+        LOGGER.info(
+            "Overwriting existing '%s' column in shard %s with new assignments",
+            centroid_column,
+            shard_path,
+        )
 
     df = df.assign(**{centroid_column: centroid_col})
     write_parquet_atomic(df, shard_path)
@@ -269,7 +276,7 @@ def run(cfg: TrainConfig) -> None:
         LOGGER.info("Training finished; vector_dim=%s", vector_dim)
         save_model(model, cfg.model_out)
         LOGGER.info("Model saved to %s", cfg.model_out)
-        save_centroids(model, cfg.centroids_out)
+        save_centroids(model, cfg.centroids_out, cfg.centroid_column)
         LOGGER.info("Centroids saved to %s", cfg.centroids_out)
         predict_shards(cfg, model)
 
