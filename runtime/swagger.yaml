@@ -53,6 +53,52 @@ paths:
           description: Ошибка чтения/валидации CSV
         '500':
           description: Ошибка инференса модели
+  /lemmatize:
+    post:
+      summary: Провести лемматизацию текста
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PredictRequest'
+      responses:
+        '200':
+          description: Результат лемматизации
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LemmatizeResponse'
+        '500':
+          description: Ошибка лемматизации
+  /ner:
+    post:
+      summary: Извлечь именованные сущности из текста
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PredictRequest'
+      responses:
+        '200':
+          description: Список найденных сущностей
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NerResponse'
+        '500':
+          description: Ошибка извлечения сущностей
+  /health:
+    get:
+      summary: Проверка статуса сервиса
+      responses:
+        '200':
+          description: Сервис доступен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
 components:
   schemas:
     PredictRequest:
@@ -80,3 +126,32 @@ components:
           type: number
           format: float
           description: Вероятность позитивного класса (в процентах)
+    LemmatizeResponse:
+      type: object
+      properties:
+        output:
+          type: string
+          description: Результат лемматизации
+    NerResponse:
+      type: object
+      properties:
+        entities:
+          type: array
+          items:
+            type: string
+          description: Список найденных сущностей
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          description: Статус сервиса
+        device:
+          type: string
+          description: Устройство, на котором работает модель
+        compiled:
+          type: boolean
+          description: Применена ли компиляция модели
+        attention:
+          type: string
+          description: Используемая реализация внимания

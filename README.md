@@ -13,7 +13,7 @@
 - **`classifier_training`** — базовое обучение модели по меткам из Parquet. Выдаёт чекпоинты и метрики качества.
 - **`clustering`** — прогон модели по сырым текстам → сбор CLS-векторов → нормализация/PCA → MiniBatchKMeans (CPU или GPU) → кластерные метки, оценка purity и обновление датасетов псевдоразметкой.
 - **`metric_classifier_training`** — дообучение модели, совмещающее CrossEntropy по размеченной части и SupCon для metric learning по выбранным примерам (например, после кластеризации и фильтрации).
-- **`runtime`** — обёртка FastAPI над обученной моделью для онлайн-инференса: одиночные запросы и пакетная обработка CSV.
+- **`runtime`** — обёртка FastAPI над обученной моделью для онлайн-инференса: одиночные запросы, пакетная обработка CSV, сервисы лемматизации/NER и health-check.
 
 ## Основные возможности
 - Обучение классификатора текста с поддержкой mixed precision, gradient accumulation, scheduler, label smoothing и Neptune-логированием.
@@ -58,9 +58,13 @@ python -m pip install --no-build-isolation -v flash-attn
 3. **Инференс обученной моделью в runtime:**
    - Скопируйте полученный чекпоинт/папку модели в директорию, указанную в `runtime/config.yaml`.
    - Запустите сервис (см. раздел "Runtime").
-   - Отправьте запрос:
+   - Отправьте запросы (доступны `/predict`, `/lemmatize`, `/ner`, `/csv`, `/health`):
      ```bash
      curl -X POST "http://localhost:8000/predict" \
+       -H "Content-Type: application/json" \
+       -d '{"text": "Пример текста"}'
+
+     curl -X POST "http://localhost:8000/lemmatize" \
        -H "Content-Type: application/json" \
        -d '{"text": "Пример текста"}'
      ```
