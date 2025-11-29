@@ -12,24 +12,29 @@ import pyarrow.parquet as pq
 def list_parquet_shards(input_dir: str) -> List[str]:
     if not os.path.isdir(input_dir):
         raise FileNotFoundError(f"Input directory not found: {input_dir}")
+    
     shards = [
         os.path.join(input_dir, name)
         for name in sorted(os.listdir(input_dir))
         if name.endswith(".parquet")
     ]
+
     return shards
 
 
 def _validate_vector(vec: object, expected_dim: Optional[int]) -> Tuple[Optional[np.ndarray], Optional[int]]:
     if vec is None:
         return None, expected_dim
+    
     if isinstance(vec, (list, tuple)):
         arr = np.asarray(vec, dtype=np.float32)
+
     else:
         try:
             arr = np.asarray(vec, dtype=np.float32)
         except Exception:
             return None, expected_dim
+        
     if arr.ndim != 1:
         return None, expected_dim
     if arr.size == 0:
@@ -38,6 +43,7 @@ def _validate_vector(vec: object, expected_dim: Optional[int]) -> Tuple[Optional
         expected_dim = arr.size
     if arr.size != expected_dim:
         return None, expected_dim
+    
     return arr, expected_dim
 
 
@@ -51,6 +57,7 @@ def iter_vector_batches(
 ) -> Tuple[Iterable[np.ndarray], Optional[int], int]:
     file = pq.ParquetFile(shard_path)
     yielded = 0
+
     for batch in file.iter_batches(columns=[column], batch_size=batch_size):
         vectors: List[np.ndarray] = []
         for value in batch.column(0).to_pylist():
@@ -58,12 +65,16 @@ def iter_vector_batches(
             if vec is None:
                 logger.warning("Skipping invalid vector in %s", shard_path)
                 continue
+
             vectors.append(vec)
             yielded += 1
+
             if sample_limit is not None and yielded >= sample_limit:
                 break
+
         if vectors:
             yield np.stack(vectors, axis=0), expected_dim, len(vectors)
+            
         if sample_limit is not None and yielded >= sample_limit:
             break
 
