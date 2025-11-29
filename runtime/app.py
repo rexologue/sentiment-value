@@ -7,6 +7,8 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Literal
 
+from functools import lru_cache
+
 import pandas as pd
 import torch
 import yaml
@@ -15,6 +17,15 @@ from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, ValidationError
 from starlette.concurrency import run_in_threadpool
+
+from natasha import (
+    Doc,
+    MorphVocab,
+    NewsEmbedding,
+    NewsMorphTagger,
+    NewsNERTagger,
+    Segmenter,
+)
 
 from model import ModelWrapper, OptimizationInfo, load_model
 
@@ -56,6 +67,14 @@ class PredictResponse(BaseModel):
     negative_score: float
     neutral_score: float
     positive_score: float
+
+
+class LemmatizeResponse(BaseModel):
+    output: str
+
+
+class NerResponse(BaseModel):
+    entities: list[str]
 
 
 class HealthResponse(BaseModel):
@@ -134,6 +153,43 @@ def create_app() -> FastAPI:
 app = create_app()
 
 
+@lru_cache(maxsize=1)
+def _load_ru_nlp_pipeline():
+    """Lazy-load lightweight Russian NLP pipeline for lemmatization and NER."""
+
+    segmenter = Segmenter()
+    embeddings = NewsEmbedding()
+    morph_vocab = MorphVocab()
+    morph_tagger = NewsMorphTagger(embeddings)
+    ner_tagger = NewsNERTagger(embeddings)
+
+    return segmenter, morph_vocab, morph_tagger, ner_tagger
+
+
+def _lemmatize_text(text: str) -> str:
+    segmenter, morph_vocab, morph_tagger, _ = _load_ru_nlp_pipeline()
+
+    doc = Doc(text)
+    doc.segment(segmenter)
+    doc.tag_morph(morph_tagger)
+
+    for token in doc.tokens:
+        token.lemmatize(morph_vocab)
+
+    lemmas = [token.lemma for token in doc.tokens if token.lemma]
+    return " ".join(lemmas)
+
+
+def _extract_entities(text: str) -> list[str]:
+    segmenter, _, _, ner_tagger = _load_ru_nlp_pipeline()
+
+    doc = Doc(text)
+    doc.segment(segmenter)
+    doc.tag_ner(ner_tagger)
+
+    return [span.text for span in doc.spans]
+
+
 def _probs_to_response(probs: torch.Tensor) -> PredictResponse:
     if probs.ndim != 2 or probs.shape[1] != 3:
         raise ValueError("Model output must be of shape [batch, 3]")
@@ -175,6 +231,32 @@ async def predict(payload: PredictRequest) -> PredictResponse:
 
     response = _probs_to_response(probs)
     return response
+
+
+@app.post("/lemmatize", response_model=LemmatizeResponse)
+async def lemmatize(payload: PredictRequest) -> LemmatizeResponse:
+    LOGGER.info("/lemmatize called with text length=%d", len(payload.text))
+
+    try:
+        output = await run_in_threadpool(_lemmatize_text, payload.text)
+    except Exception:
+        LOGGER.exception("Lemmatization failed for /lemmatize")
+        raise HTTPException(status_code=500, detail="Lemmatization failed")
+
+    return LemmatizeResponse(output=output)
+
+
+@app.post("/ner", response_model=NerResponse)
+async def ner(payload: PredictRequest) -> NerResponse:
+    LOGGER.info("/ner called with text length=%d", len(payload.text))
+
+    try:
+        entities = await run_in_threadpool(_extract_entities, payload.text)
+    except Exception:
+        LOGGER.exception("NER failed for /ner")
+        raise HTTPException(status_code=500, detail="Entity extraction failed")
+
+    return NerResponse(entities=entities)
 
 
 @app.post("/csv")
