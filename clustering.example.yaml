@@ -44,3 +44,19 @@ purity_counter:
   cluster_column: cluster_id
   progress: true
   log_level: INFO
+
+update_dataset:
+  shards_dir: data/clustering/pca
+  centroids_path: data/clustering/centroids/centroids.parquet
+  output_path: data/clustering/updated_dataset.parquet
+  metric_purity_threshold: 0.9
+  metric_max_prob_threshold: 0.8
+  classification_purity_threshold: 0.8
+  classification_max_prob_threshold: 0.7
+  text_column: text
+  label_column: label
+  cluster_id_column: cluster_id
+  probs_column: probs
+  max_prob_column: max_prob
+  progress: true
+  log_level: INFO

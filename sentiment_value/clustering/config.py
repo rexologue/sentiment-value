@@ -231,6 +231,65 @@ class PurityCounterConfig:
         return cfg
 
 
+@dataclass
+class UpdateDatasetConfig:
+    """Configuration for building filtered datasets with masks."""
+
+    shards_dir: str
+    centroids_path: str
+    output_path: str
+    metric_purity_threshold: float
+    metric_max_prob_threshold: float
+    classification_purity_threshold: float
+    classification_max_prob_threshold: float
+    text_column: str = "text"
+    label_column: str = "label"
+    cluster_id_column: str = "cluster_id"
+    probs_column: Optional[str] = "probs"
+    max_prob_column: Optional[str] = "max_prob"
+    progress: bool = True
+    log_level: str = "INFO"
+    extra_fields: Dict[str, Any] = field(default_factory=dict, repr=False)
+
+    def validate(self) -> None:
+        if not self.shards_dir:
+            raise ValueError("shards_dir must be provided")
+        if not self.centroids_path:
+            raise ValueError("centroids_path must be provided")
+        if not self.output_path:
+            raise ValueError("output_path must be provided")
+        if self.metric_purity_threshold < 0 or self.classification_purity_threshold < 0:
+            raise ValueError("purity thresholds must be non-negative")
+        if self.metric_max_prob_threshold < 0 or self.classification_max_prob_threshold < 0:
+            raise ValueError("max probability thresholds must be non-negative")
+        if not self.text_column:
+            raise ValueError("text_column must be provided")
+        if not self.label_column:
+            raise ValueError("label_column must be provided")
+        if not self.cluster_id_column:
+            raise ValueError("cluster_id_column must be provided")
+        if not (self.max_prob_column or self.probs_column):
+            raise ValueError("At least one of max_prob_column or probs_column must be set")
+        self.log_level = self.log_level.upper()
+
+    @classmethod
+    def from_yaml(cls, config_path: str) -> "UpdateDatasetConfig":
+        data = _load_block(config_path, "update_dataset")
+        known_fields = {field.name for field in cls.__dataclass_fields__.values()}
+        init_kwargs: Dict[str, Any] = {}
+        extras: Dict[str, Any] = {}
+
+        for key, value in data.items():
+            if key in known_fields:
+                init_kwargs[key] = value
+            else:
+                extras[key] = value
+
+        cfg = cls(**init_kwargs, extra_fields=extras)
+        cfg.validate()
+        return cfg
+
+
 def parse_config_path(argv: Optional[Any] = None) -> argparse.Namespace:
     """Parse a single ``--config`` argument from the CLI.
 
@@ -251,5 +310,6 @@ __all__ = [
     "NormalizePCAConfig",
     "TrainConfig",
     "PurityCounterConfig",
+    "UpdateDatasetConfig",
     "parse_config_path",
 ]
