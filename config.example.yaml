@@ -5,6 +5,7 @@ data:
   val_ratio: 0.1
   num_workers: 2
   upsample: false
+  downsample: false
 
 training:
   batch_size: 8

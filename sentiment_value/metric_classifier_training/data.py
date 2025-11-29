@@ -20,6 +20,7 @@ class DatasetConfig:
     seed: int = 42
     batch_size: int = 8
     shuffle: bool = True
+    downsample: bool = False
 
 
 class LabelEncoder:
@@ -129,6 +130,17 @@ def load_datasets(
     if not required_columns.issubset(df.columns):
         missing = required_columns - set(df.columns)
         raise ValueError(f"Parquet file must contain columns: {missing}")
+
+    if config.downsample:
+        label_counts = df["label"].value_counts()
+        if label_counts.empty:
+            raise ValueError("Cannot downsample an empty dataset")
+        min_count = label_counts.min()
+        df = (
+            df.groupby("label", group_keys=False)
+            .apply(lambda g: g.sample(min_count, random_state=config.seed))
+            .reset_index(drop=True)
+        )
 
     val_ratio = val_ratio if val_ratio is not None else config.val_ratio
     tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
