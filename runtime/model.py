@@ -70,6 +70,10 @@ class OptimizedSequenceClassificationModel:
 
         self._print_summary()
 
+    @property
+    def num_labels(self) -> int:
+        return int(self.config.num_labels)
+
     # -------------------------------------------------------------------------
     # Public API
     # -------------------------------------------------------------------------
@@ -263,3 +267,64 @@ class OptimizedSequenceClassificationModel:
 
         LOGGER.info(summary.replace("\n", " | "))
         print(summary)
+
+
+class ModelWrapper:
+    """High-level model interface used by the FastAPI application.
+
+    This wrapper keeps the model and tokenizer in memory and exposes a simple
+    batch `predict` API that returns softmax probabilities on the CPU.
+    """
+
+    def __init__(
+        self,
+        model_path: Union[str, Path],
+        *,
+        prefer_cuda: bool = True,
+        enable_compile: bool = True,
+    ) -> None:
+        model_path = Path(model_path)
+        if not model_path.exists():
+            raise FileNotFoundError(f"Model path does not exist: {model_path}")
+
+        self.model = OptimizedSequenceClassificationModel(
+            model_path,
+            prefer_cuda=prefer_cuda,
+            enable_compile=enable_compile,
+        )
+
+    @property
+    def info(self) -> OptimizationInfo:
+        return self.model.info
+
+    @property
+    def device(self) -> torch.device:
+        return self.model.info.device
+
+    @property
+    def num_labels(self) -> int:
+        return self.model.num_labels
+
+    def predict(
+        self,
+        texts: Sequence[str],
+        *,
+        batch_size: int = 32,
+        max_length: Optional[int] = None,
+    ) -> torch.Tensor:
+        """Return softmax probabilities for a batch of texts on the CPU."""
+
+        probs = self.model.probabilities(
+            list(texts),
+            batch_size=batch_size,
+            max_length=max_length,
+        )
+
+        return probs.to("cpu")
+
+
+def load_model(model_path: Union[str, Path], *, enable_compile: bool = True) -> ModelWrapper:
+    """Convenience helper to load the optimized model wrapper."""
+
+    LOGGER.info("Loading model from %s", model_path)
+    return ModelWrapper(model_path, enable_compile=enable_compile)

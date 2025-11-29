@@ -1433,5 +1433,8 @@ CMakeUserPresets.json
 !metric_classifier_training.example.yaml
 !docker-compose.example.yaml
 !clustering.example.yaml
+!docker-compose.yaml
+!runtime/config.example.yaml
+!Dockerfile.gpu
 
 vllm

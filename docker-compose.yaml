@@ -1,0 +1,29 @@
+services:
+  sentiment-api-gpu:
+    build:
+      context: .
+      dockerfile: Dockerfile.gpu
+    container_name: sentiment-api-gpu
+    environment:
+      - SENTIMENT_CONFIG_PATH=/app/config.yaml
+    volumes:
+      - /path/to/model_dir:/app/model:ro
+      - /path/to/runtime/config.yaml:/app/config.yaml:ro
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - capabilities: ["gpu"]
+    restart: unless-stopped
+
+  sentiment-api-cpu:
+    build:
+      context: .
+      dockerfile: Dockerfile.cpu
+    container_name: sentiment-api-cpu
+    environment:
+      - SENTIMENT_CONFIG_PATH=/app/config.yaml
+    volumes:
+      - /path/to/model_dir:/app/model:ro
+      - /path/to/runtime/config.yaml:/app/config.yaml:ro
+    restart: unless-stopped
