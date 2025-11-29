@@ -125,7 +125,7 @@ def load_datasets(
     """Load parquet data and return train/val datasets and a label encoder."""
 
     df = pd.read_parquet(config.parquet_path)
-    required_columns = {"text", "label", "metric_mask", "classifier_mask"}
+    required_columns = {"text", "label", "metric_mask", "classification_mask"}
     if not required_columns.issubset(df.columns):
         missing = required_columns - set(df.columns)
         raise ValueError(f"Parquet file must contain columns: {missing}")
@@ -141,7 +141,7 @@ def load_datasets(
         df["text"].tolist(),
         encoded_labels,
         df["metric_mask"].tolist(),
-        df["classifier_mask"].tolist(),
+        df["classification_mask"].tolist(),
         test_size=val_ratio,
         random_state=config.seed,
         stratify=encoded_labels if encoder.num_labels > 1 else None,

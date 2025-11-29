@@ -68,6 +68,7 @@ class MetricValidationConfig:
     recall_at_k: List[int] | None = None
     distance: str = "cos"
     knn_k: int = 10
+    keep_last_n_emb_steps: int = 10
 
 
 @dataclass
