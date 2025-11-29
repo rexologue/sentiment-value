@@ -246,11 +246,11 @@ class Trainer:
                 feats = outputs["features_norm"]
                 valid = mask > 0
                 if valid.any():
-                    embeddings.append(feats[valid].detach().cpu())
-                    labels.append(batch["labels"][valid].detach().cpu())
+                    embeddings.append(feats[valid])
+                    labels.append(batch["labels"][valid])
         if embeddings:
             return torch.cat(embeddings, dim=0), torch.cat(labels, dim=0)
-        return torch.empty(0), torch.empty(0, dtype=torch.long)
+        return torch.empty(0, device=self.device), torch.empty(0, dtype=torch.long, device=self.device)
 
     def validate(self, epoch: int):
         self.model.eval()
@@ -290,15 +290,15 @@ class Trainer:
 
                 if metric_mask.sum() > 0:
                     valid = metric_mask > 0
-                    val_embeddings.append(features_norm[valid].detach().cpu())
-                    val_metric_labels.append(batch["labels"][valid].detach().cpu())
+                    val_embeddings.append(features_norm[valid])
+                    val_metric_labels.append(batch["labels"][valid])
 
         avg_cls_loss = total_cls_loss / len(self.val_loader)
         avg_metric_loss = total_metric_loss / len(self.val_loader)
         total_loss = avg_cls_loss * self.classification_loss_weight + avg_metric_loss * self.metric_loss_weight
 
-        val_emb_tensor = torch.cat(val_embeddings, dim=0) if val_embeddings else torch.empty(0)
-        val_label_tensor = torch.cat(val_metric_labels, dim=0) if val_metric_labels else torch.empty(0, dtype=torch.long)
+        val_emb_tensor = torch.cat(val_embeddings, dim=0) if val_embeddings else torch.empty(0, device=self.device)
+        val_label_tensor = torch.cat(val_metric_labels, dim=0) if val_metric_labels else torch.empty(0, dtype=torch.long, device=self.device)
 
         metrics = compute_metrics(preds, labels_list) if labels_list else {"accuracy": 0.0, "precision": 0.0, "recall": 0.0, "f1": 0.0}
         cm_fig = plot_confusion_matrix(
