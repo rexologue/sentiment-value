@@ -323,8 +323,17 @@ class ModelWrapper:
         return probs.to("cpu")
 
 
-def load_model(model_path: Union[str, Path], *, enable_compile: bool = True) -> ModelWrapper:
+def load_model(
+    model_path: Union[str, Path],
+    *,
+    prefer_cuda: bool = True,
+    enable_compile: bool = True,
+) -> ModelWrapper:
     """Convenience helper to load the optimized model wrapper."""
 
     LOGGER.info("Loading model from %s", model_path)
-    return ModelWrapper(model_path, enable_compile=enable_compile)
+    return ModelWrapper(
+        model_path,
+        prefer_cuda=prefer_cuda,
+        enable_compile=enable_compile,
+    )

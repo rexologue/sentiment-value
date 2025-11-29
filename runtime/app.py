@@ -24,6 +24,8 @@ DEFAULT_CONFIG_PATH = "/app/config.yaml"
 
 class ServiceConfig(BaseModel):
     model_path: str
+    prefer_cuda: bool = True
+    enable_compile: bool = False
     host: str = "0.0.0.0"
     port: int = 8000
     csv_batch_size: int = 64
@@ -95,7 +97,11 @@ async def lifespan(app: FastAPI):
         LOGGER.error("Model path does not exist: %s", model_path)
         raise FileNotFoundError(f"Model path does not exist: {model_path}")
 
-    model = load_model(str(model_path), enable_compile=False)
+    model = load_model(
+        str(model_path),
+        prefer_cuda=config.prefer_cuda,
+        enable_compile=config.enable_compile,
+    )
     LOGGER.info(
         "Loaded model at %s on device=%s with attention=%s compiled=%s",
         model_path,
