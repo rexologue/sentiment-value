@@ -38,6 +38,7 @@ checkpointing:
 metric_validation:
   recall_at_k: [1, 10, 100]
   distance: cos  # options: cos, l2
+  knn_k: 10
 
 neptune:
   project: your-username/your-project

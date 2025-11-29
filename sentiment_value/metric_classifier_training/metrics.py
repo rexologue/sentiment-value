@@ -1,7 +1,7 @@
 """Metric utilities for metric-classifier training."""
 from __future__ import annotations
 
-from typing import Dict, Sequence
+from typing import Dict, Iterable, List, Sequence, Tuple
 
 import torch
 
@@ -32,4 +32,29 @@ def recall_at_k(train_embeddings: torch.Tensor, train_labels: torch.Tensor, val_
     return results
 
 
-__all__ = ["compute_metrics", "plot_confusion_matrix", "recall_at_k"]
+def knn_macro_f1(train_embeddings: torch.Tensor, train_labels: torch.Tensor, val_embeddings: torch.Tensor, val_labels: torch.Tensor, k: int, distance: str = "cos") -> float:
+    """Compute k-NN macro F1 based on embeddings."""
+
+    if train_embeddings.numel() == 0 or val_embeddings.numel() == 0:
+        return 0.0
+
+    if distance == "cos":
+        similarities = torch.matmul(val_embeddings, train_embeddings.T)
+        sorted_indices = torch.argsort(similarities, dim=1, descending=True)
+    else:
+        dists = torch.cdist(val_embeddings, train_embeddings, p=2)
+        sorted_indices = torch.argsort(dists, dim=1, descending=False)
+
+    topk = sorted_indices[:, :k]
+    topk_labels = train_labels[topk]
+    preds = []
+    for neighbors in topk_labels:
+        values, counts = torch.unique(neighbors, return_counts=True)
+        preds.append(values[torch.argmax(counts)])
+
+    preds_tensor = torch.stack(preds)
+    metrics = compute_metrics(preds_tensor.cpu().numpy(), val_labels.cpu().numpy())
+    return metrics["f1"]
+
+
+__all__ = ["compute_metrics", "plot_confusion_matrix", "recall_at_k", "knn_macro_f1"]
