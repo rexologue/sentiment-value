@@ -1,0 +1,13 @@
+FROM python:3.10-slim
+
+WORKDIR /app
+
+RUN pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu torch==2.8.0
+COPY runtime/api-requirements.txt runtime/api-requirements.txt
+RUN pip install --no-cache-dir -r runtime/api-requirements.txt
+
+COPY . .
+
+ENV SENTIMENT_CONFIG_PATH=/app/config.yaml
+
+CMD ["uvicorn", "runtime.app:app", "--host", "0.0.0.0", "--port", "8000"]

@@ -1,0 +1,8 @@
+model_path: /app/model
+host: 0.0.0.0
+port: 8000
+
+csv_batch_size: 64
+
+log_level: INFO
+log_format: plain
