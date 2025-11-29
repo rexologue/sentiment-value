@@ -51,6 +51,12 @@ def parse_args():
         help="Optional path to save metrics as JSON",
     )
     parser.add_argument(
+        "--mapping",
+        type=Path,
+        default=None,
+        help="JSON file with mapping rules for model answers",
+    )
+    parser.add_argument(
         "--disable-compile",
         action="store_true",
         help="Disable torch.compile even if available",
@@ -105,15 +111,35 @@ def main():
 
     model = load_model(args.model_dir, args.device, not args.disable_compile)
     df = load_dataset(args.data)
+
     if not {"text", "label"}.issubset(df.columns):
         raise ValueError("Dataset must contain 'text' and 'label' columns")
+
+    # Загружаем mapping при необходимости
+    map_tensor = None
+    if args.mapping is not None:
+        with args.mapping.open("r", encoding="utf-8") as f:
+            data = json.load(f)
+
+        # Ожидаем ключи "0", "1", ..., "N-1"
+        # Явно сортируем по числовому ключу
+        max_idx = max(int(k) for k in data.keys())
+        mapping_list = [data[str(i)] for i in range(max_idx + 1)]
+        map_tensor = torch.tensor(mapping_list, dtype=torch.long)
 
     texts = df["text"].astype(str).tolist()
     labels = df["label"].tolist()
 
     logits = run_validation(model, texts, labels, args.batch_size)
     probabilities = torch.softmax(logits, dim=-1)
-    predictions = torch.argmax(probabilities, dim=-1).tolist()
+    predictions = torch.argmax(probabilities, dim=-1)
+
+    # Применяем mapping, если он есть
+    if map_tensor is not None:
+        map_tensor = map_tensor.to(predictions.device)
+        predictions = map_tensor[predictions]
+
+    predictions = predictions.cpu().tolist()
 
     acc = accuracy_score(labels, predictions)
     macro_f1 = f1_score(labels, predictions, average="macro")
