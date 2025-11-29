@@ -14,12 +14,7 @@ from tqdm.auto import tqdm
 from sentiment_value.classifier_training.checkpoint_manager import CheckpointManager
 from sentiment_value.classifier_training.utils.training import move_batch_to_device
 from sentiment_value.metric_classifier_training.losses import masked_cross_entropy, supervised_contrastive_loss
-from sentiment_value.metric_classifier_training.metrics import (
-    compute_metrics,
-    knn_macro_f1,
-    plot_confusion_matrix,
-    recall_at_k,
-)
+from sentiment_value.metric_classifier_training.metrics import compute_metrics, plot_confusion_matrix, recall_at_k
 
 
 class MetricClassifierModel(nn.Module):
@@ -316,15 +311,6 @@ class Trainer:
             self.metric_validation_cfg.get("recall_at_k", [1, 10, 100]),
             distance=self.metric_validation_cfg.get("distance", "cos"),
         )
-        knn_f1 = knn_macro_f1(
-            train_embeddings,
-            train_labels,
-            val_emb_tensor,
-            val_label_tensor,
-            self.metric_validation_cfg.get("knn_k", 10),
-            distance=self.metric_validation_cfg.get("distance", "cos"),
-        )
-
         self.logger.save_metrics(
             "val",
             [
@@ -335,7 +321,6 @@ class Trainer:
                 "precision",
                 "recall",
                 "f1",
-                "knn_macro_f1",
             ]
             + [f"recall_at_{k}" for k in recall_metrics.keys()],
             [
@@ -346,7 +331,6 @@ class Trainer:
                 metrics.get("precision", 0.0),
                 metrics.get("recall", 0.0),
                 metrics.get("f1", 0.0),
-                knn_f1,
             ]
             + list(recall_metrics.values()),
             step=self.global_batch,

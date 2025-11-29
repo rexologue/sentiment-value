@@ -139,7 +139,6 @@ def main():
             "metric_validation": {
                 "recall_at_k": cfg.metric_validation.recall_at_k,
                 "distance": cfg.metric_validation.distance,
-                "knn_k": cfg.metric_validation.knn_k,
             },
         }
     )
@@ -171,7 +170,6 @@ def main():
         metric_validation_cfg={
             "recall_at_k": cfg.metric_validation.recall_at_k,
             "distance": cfg.metric_validation.distance,
-            "knn_k": cfg.metric_validation.knn_k,
         },
     )
 
