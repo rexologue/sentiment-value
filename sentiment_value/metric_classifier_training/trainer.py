@@ -81,6 +81,7 @@ class Trainer:
         save_best_by: str = "loss",
         start_state: Optional[Dict] = None,
         metric_validation_cfg: Optional[Dict] = None,
+        extra_val_loader: Optional[DataLoader] = None,
     ):
         if save_best_by not in {"loss", "acc", "f1"}:
             raise ValueError("save_best_by must be one of {'loss', 'acc', 'f1'}")
@@ -93,6 +94,7 @@ class Trainer:
         self.device = device
         self.logger = logger
         self.label_encoder = label_encoder
+        self.extra_val_loader = extra_val_loader
         self.grad_accum_steps = grad_accum_steps
         self.mixed_precision = mixed_precision
         self.gradient_clip_val = gradient_clip_val
@@ -189,6 +191,26 @@ class Trainer:
                             current_lr = self.optimizer.param_groups[0].get("lr")
                             self.logger.save_metrics("train", "learning_rate", current_lr, step=self.global_step)
 
+                        if classifier_mask.sum() > 0:
+                            valid_classifier = classifier_mask > 0
+                            batch_preds = torch.argmax(logits.detach()[valid_classifier], dim=-1).tolist()
+                            batch_labels = batch["labels"][valid_classifier].tolist()
+                            batch_metrics = compute_metrics(batch_preds, batch_labels)
+                        else:
+                            batch_metrics = {"accuracy": 0.0, "precision": 0.0, "recall": 0.0, "f1": 0.0}
+
+                        self.logger.save_metrics(
+                            "train",
+                            ["f1", "accuracy", "precision", "recall"],
+                            [
+                                batch_metrics["f1"],
+                                batch_metrics["accuracy"],
+                                batch_metrics["precision"],
+                                batch_metrics["recall"],
+                            ],
+                            step=self.global_batch,
+                        )
+
                         epoch_classification_loss += ce_loss.item()
                         epoch_metric_loss += metric_loss.item()
                         if metric_mask.sum() > 0:
@@ -208,6 +230,8 @@ class Trainer:
 
                         if self.global_batch % self.save_every_n_batches == 0:
                             val_loss, metrics, cm_path = self.validate(epoch)
+                            if self.extra_val_loader is not None:
+                                self.validate(epoch, loader=self.extra_val_loader, suffix="_extra")
                             latest_val_results = (val_loss, metrics, cm_path)
                             self._maybe_save_best(val_loss, metrics, cm_path, epoch)
                             checkpoint_path = self._save_checkpoint(
@@ -233,6 +257,9 @@ class Trainer:
                 else:
                     val_loss, metrics, cm_path = latest_val_results
 
+                if self.extra_val_loader is not None:
+                    self.validate(epoch, loader=self.extra_val_loader, suffix="_extra")
+
                 last_cm_path = cm_path
                 progress.set_description(
                     f"Epoch {epoch + 1} | total_loss={avg_train_total:.4f} "
@@ -246,13 +273,16 @@ class Trainer:
             self._attempt_save_last_checkpoint(epoch, last_cm_path)
             raise
 
-    def validate(self, epoch: int):
+    def validate(
+        self, epoch: int, loader: Optional[DataLoader] = None, suffix: str = ""
+    ) -> tuple[float, Dict[str, float], str]:
         self._flush_pending_embedding_bank()
+        eval_loader = loader or self.val_loader
         self.model.eval()
         total_cls_loss = 0.0
         total_metric_loss = 0.0
-        preds = []
-        labels_list = []
+        preds: list[int] = []
+        labels_list: list[int] = []
         train_embeddings = (
             torch.cat(self.train_embedding_bank, dim=0) if getattr(self, "train_embedding_bank", None) else torch.empty(0)
         )
@@ -265,7 +295,7 @@ class Trainer:
         val_metric_labels: list[torch.Tensor] = []
 
         with torch.no_grad():
-            for batch in self.val_loader:
+            for batch in eval_loader:
                 batch = move_batch_to_device(batch, self.device)
                 classifier_mask = batch.pop("classifier_mask")
                 metric_mask = batch.pop("metric_mask")
@@ -294,20 +324,24 @@ class Trainer:
                     val_embeddings.append(features_norm[valid].detach().cpu())
                     val_metric_labels.append(batch["labels"][valid].detach().cpu())
 
-        avg_cls_loss = total_cls_loss / len(self.val_loader)
-        avg_metric_loss = total_metric_loss / len(self.val_loader)
+        avg_cls_loss = total_cls_loss / len(eval_loader)
+        avg_metric_loss = total_metric_loss / len(eval_loader)
         total_loss = avg_cls_loss * self.classification_loss_weight + avg_metric_loss * self.metric_loss_weight
 
         val_emb_tensor = torch.cat(val_embeddings, dim=0) if val_embeddings else torch.empty(0)
         val_label_tensor = torch.cat(val_metric_labels, dim=0) if val_metric_labels else torch.empty(0, dtype=torch.long)
 
-        metrics = compute_metrics(preds, labels_list) if labels_list else {"accuracy": 0.0, "precision": 0.0, "recall": 0.0, "f1": 0.0}
+        metrics = (
+            compute_metrics(preds, labels_list)
+            if labels_list
+            else {"accuracy": 0.0, "precision": 0.0, "recall": 0.0, "f1": 0.0}
+        )
         cm_fig = plot_confusion_matrix(
             labels_list,
             preds,
             [self.label_encoder.id_to_label[i] for i in sorted(self.label_encoder.id_to_label)],
         )
-        cm_path = self._save_confusion_matrix(cm_fig, epoch)
+        cm_path = self._save_confusion_matrix(cm_fig, epoch, suffix)
 
         recall_metrics = recall_at_k(
             train_embeddings,
@@ -326,33 +360,31 @@ class Trainer:
             distance=self.metric_validation_cfg.get("distance", "cos"),
         )
 
-        self.logger.save_metrics(
-            "val",
-            [
-                "classification_loss",
-                "metric_loss",
-                "total_loss",
-                "accuracy",
-                "precision",
-                "recall",
-                "f1",
-                "knn_macro_f1",
-            ]
-            + [f"recall_at_{k}" for k in recall_metrics.keys()],
-            [
-                avg_cls_loss,
-                avg_metric_loss,
-                total_loss,
-                metrics.get("accuracy", 0.0),
-                metrics.get("precision", 0.0),
-                metrics.get("recall", 0.0),
-                metrics.get("f1", 0.0),
-                knn_f1,
-            ]
-            + list(recall_metrics.values()),
-            step=self.global_batch,
-        )
-        self.logger.save_plot("val", f"confusion_matrix_epoch_{epoch}", cm_fig)
+        metric_names = [
+            "classification_loss",
+            "metric_loss",
+            "total_loss",
+            "accuracy",
+            "precision",
+            "recall",
+            "f1",
+            "knn_macro_f1",
+        ] + [f"recall_at_{k}" for k in recall_metrics.keys()]
+        metric_values = [
+            avg_cls_loss,
+            avg_metric_loss,
+            total_loss,
+            metrics.get("accuracy", 0.0),
+            metrics.get("precision", 0.0),
+            metrics.get("recall", 0.0),
+            metrics.get("f1", 0.0),
+            knn_f1,
+        ] + list(recall_metrics.values())
+        if suffix:
+            metric_names = [f"{name}{suffix}" for name in metric_names]
+
+        self.logger.save_metrics("val", metric_names, metric_values, step=self.global_batch)
+        self.logger.save_plot("val", f"confusion_matrix{suffix}_epoch_{epoch}", cm_fig)
 
         return avg_cls_loss, metrics, cm_path
 
@@ -376,8 +408,8 @@ class Trainer:
             self.train_embedding_bank.pop(0)
             self.train_label_bank.pop(0)
 
-    def _save_confusion_matrix(self, fig, epoch: int) -> str:
-        cm_path = self.checkpoint_manager.base_dir / f"confusion_matrix_epoch_{epoch}.png"
+    def _save_confusion_matrix(self, fig, epoch: int, suffix: str = "") -> str:
+        cm_path = self.checkpoint_manager.base_dir / f"confusion_matrix{suffix}_epoch_{epoch}.png"
         fig.savefig(cm_path)
         return str(cm_path)
 

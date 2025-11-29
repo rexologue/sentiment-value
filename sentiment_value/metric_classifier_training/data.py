@@ -225,6 +225,32 @@ def create_dataloaders(
     return train_loader, val_loader
 
 
+def load_external_validation_dataset(
+    parquet_path: str,
+    tokenizer: AutoTokenizer,
+    label_encoder: LabelEncoder,
+    max_seq_length: int,
+) -> MetricClassificationDataset:
+    """Load an external validation dataset with all masks enabled."""
+
+    df = pd.read_parquet(parquet_path)
+    if "text" not in df.columns or "label" not in df.columns:
+        raise ValueError("External validation parquet must contain 'text' and 'label' columns")
+
+    labels = label_encoder.encode(df["label"].astype("int64").tolist())
+    metric_mask = [1.0 for _ in labels]
+    classifier_mask = [1.0 for _ in labels]
+
+    return MetricClassificationDataset(
+        df["text"].tolist(),
+        labels,
+        metric_mask,
+        classifier_mask,
+        tokenizer,
+        max_seq_length,
+    )
+
+
 __all__ = [
     "DatasetConfig",
     "LabelEncoder",
@@ -232,4 +258,5 @@ __all__ = [
     "collate_batch",
     "load_datasets",
     "create_dataloaders",
+    "load_external_validation_dataset",
 ]
