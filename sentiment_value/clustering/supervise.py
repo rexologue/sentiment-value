@@ -42,16 +42,29 @@ def load_data(parquet_path: str) -> List[str]:
 
 
 def collate_with_texts(tokenizer):
-    """Collate function that preserves raw text alongside tokenized tensors."""
+    """Collate function that preserves raw text alongside tokenized tensors.
+
+    If tokenization fails for a batch, the batch is marked as invalid and
+    will be skipped during inference.
+    """
 
     def _collate(batch_texts: List[str]) -> Tuple[List[str], dict]:
-        encoded = tokenizer(
-            batch_texts,
-            padding=True,
-            truncation=True,
-            return_tensors="pt",
-        )
-        return batch_texts, encoded
+        try:
+            encoded = tokenizer(
+                batch_texts,
+                padding=True,
+                truncation=True,
+                return_tensors="pt",
+            )
+            return batch_texts, encoded
+        except Exception as e:
+            # Skip the whole batch in case of tokenization error
+            print(
+                f"[WARN] Skipping batch of size {len(batch_texts)} due to "
+                f"tokenization error: {e}"
+            )
+            # We still return the raw texts so that the caller can update progress
+            return batch_texts, None
 
     return _collate
 
@@ -85,6 +98,11 @@ def run_inference(
 
     with torch.no_grad():
         for raw_texts, batch_inputs in loader:
+            # Батч помечен как битый — пропускаем, но обновляем прогресс
+            if batch_inputs is None:
+                progress.update(len(raw_texts))
+                continue
+
             batch_inputs = {k: v.to(device) for k, v in batch_inputs.items()}
             autocast_enabled = device == "cuda" and torch.cuda.is_available()
             with torch.autocast(device_type=device, enabled=autocast_enabled, dtype=model.dtype):
@@ -176,7 +194,13 @@ def run(cfg: SuperviseConfig) -> None:
         end = min(start + shard_size, len(texts))
         processed += max(0, end - start)
 
-    with tqdm(total=len(texts), initial=processed, desc="Inference", unit="text", disable=not cfg.progress) as progress:
+    with tqdm(
+        total=len(texts),
+        initial=processed,
+        desc="Inference",
+        unit="text",
+        disable=not cfg.progress,
+    ) as progress:
         for shard_idx in range(cfg.num_shards):
             start = shard_idx * shard_size
             end = min(start + shard_size, len(texts))
