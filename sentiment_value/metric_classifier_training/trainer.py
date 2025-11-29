@@ -103,6 +103,7 @@ class Trainer:
         self.save_every_n_batches = save_every_n_bathces
         self.save_best_by = save_best_by
         self.metric_validation_cfg = metric_validation_cfg or {}
+        self.keep_last_n_emb_steps = self.metric_validation_cfg.get("keep_last_n_emb_steps")
 
         self.global_step = 0
         self.global_batch = 0
@@ -110,6 +111,11 @@ class Trainer:
         self.best_metric = float("inf") if save_best_by == "loss" else float("-inf")
         self.use_cuda_amp = mixed_precision and device.type == "cuda"
         self.scaler = torch.amp.GradScaler("cuda", enabled=self.use_cuda_amp)  # type: ignore
+
+        self.train_embedding_bank: list[torch.Tensor] = []
+        self.train_label_bank: list[torch.Tensor] = []
+        self._pending_train_embeddings: list[torch.Tensor] = []
+        self._pending_train_labels: list[torch.Tensor] = []
 
         if start_state:
             self.global_step = start_state.get("global_step", 0)
@@ -128,6 +134,8 @@ class Trainer:
                 self.model.train()
                 epoch_classification_loss = 0.0
                 epoch_metric_loss = 0.0
+                self._pending_train_embeddings = []
+                self._pending_train_labels = []
                 latest_val_results: Optional[Tuple[float, Dict[str, float], str]] = None
 
                 with tqdm(
@@ -183,6 +191,10 @@ class Trainer:
 
                         epoch_classification_loss += ce_loss.item()
                         epoch_metric_loss += metric_loss.item()
+                        if metric_mask.sum() > 0:
+                            valid_metric = metric_mask > 0
+                            self._pending_train_embeddings.append(features_norm[valid_metric].detach().cpu())
+                            self._pending_train_labels.append(batch["labels"][valid_metric].detach().cpu())
                         running_cls = epoch_classification_loss / (step + 1)
                         running_metric = epoch_metric_loss / (step + 1)
                         running_total = running_cls * self.classification_loss_weight + running_metric * self.metric_loss_weight
@@ -234,32 +246,21 @@ class Trainer:
             self._attempt_save_last_checkpoint(epoch, last_cm_path)
             raise
 
-    def _collect_embeddings(self, loader: DataLoader, mask_key: str) -> Tuple[torch.Tensor, torch.Tensor]:
-        self.model.eval()
-        embeddings: list[torch.Tensor] = []
-        labels: list[torch.Tensor] = []
-        with torch.no_grad():
-            for batch in loader:
-                batch = move_batch_to_device(batch, self.device)
-                mask = batch.pop(mask_key)
-                outputs = self.model(**batch)
-                feats = outputs["features_norm"]
-                valid = mask > 0
-                if valid.any():
-                    embeddings.append(feats[valid])
-                    labels.append(batch["labels"][valid])
-        if embeddings:
-            return torch.cat(embeddings, dim=0), torch.cat(labels, dim=0)
-        return torch.empty(0, device=self.device), torch.empty(0, dtype=torch.long, device=self.device)
-
     def validate(self, epoch: int):
+        self._flush_pending_embedding_bank()
         self.model.eval()
         total_cls_loss = 0.0
         total_metric_loss = 0.0
         preds = []
         labels_list = []
-
-        train_embeddings, train_labels = self._collect_embeddings(self.train_loader, "metric_mask")
+        train_embeddings = (
+            torch.cat(self.train_embedding_bank, dim=0) if getattr(self, "train_embedding_bank", None) else torch.empty(0)
+        )
+        train_labels = (
+            torch.cat(self.train_label_bank, dim=0)
+            if getattr(self, "train_label_bank", None)
+            else torch.empty(0, dtype=torch.long)
+        )
         val_embeddings: list[torch.Tensor] = []
         val_metric_labels: list[torch.Tensor] = []
 
@@ -290,15 +291,15 @@ class Trainer:
 
                 if metric_mask.sum() > 0:
                     valid = metric_mask > 0
-                    val_embeddings.append(features_norm[valid])
-                    val_metric_labels.append(batch["labels"][valid])
+                    val_embeddings.append(features_norm[valid].detach().cpu())
+                    val_metric_labels.append(batch["labels"][valid].detach().cpu())
 
         avg_cls_loss = total_cls_loss / len(self.val_loader)
         avg_metric_loss = total_metric_loss / len(self.val_loader)
         total_loss = avg_cls_loss * self.classification_loss_weight + avg_metric_loss * self.metric_loss_weight
 
-        val_emb_tensor = torch.cat(val_embeddings, dim=0) if val_embeddings else torch.empty(0, device=self.device)
-        val_label_tensor = torch.cat(val_metric_labels, dim=0) if val_metric_labels else torch.empty(0, dtype=torch.long, device=self.device)
+        val_emb_tensor = torch.cat(val_embeddings, dim=0) if val_embeddings else torch.empty(0)
+        val_label_tensor = torch.cat(val_metric_labels, dim=0) if val_metric_labels else torch.empty(0, dtype=torch.long)
 
         metrics = compute_metrics(preds, labels_list) if labels_list else {"accuracy": 0.0, "precision": 0.0, "recall": 0.0, "f1": 0.0}
         cm_fig = plot_confusion_matrix(
@@ -354,6 +355,26 @@ class Trainer:
         self.logger.save_plot("val", f"confusion_matrix_epoch_{epoch}", cm_fig)
 
         return avg_cls_loss, metrics, cm_path
+
+    def _flush_pending_embedding_bank(self):
+        if self._pending_train_embeddings:
+            new_embeddings = torch.cat(self._pending_train_embeddings, dim=0)
+            new_labels = torch.cat(self._pending_train_labels, dim=0)
+            if new_embeddings.numel() > 0:
+                self.train_embedding_bank.append(new_embeddings)
+                self.train_label_bank.append(new_labels)
+                self._prune_embedding_bank()
+
+            self._pending_train_embeddings = []
+            self._pending_train_labels = []
+
+    def _prune_embedding_bank(self):
+        if self.keep_last_n_emb_steps is None or self.keep_last_n_emb_steps <= 0:
+            return
+
+        while len(self.train_embedding_bank) > self.keep_last_n_emb_steps:
+            self.train_embedding_bank.pop(0)
+            self.train_label_bank.pop(0)
 
     def _save_confusion_matrix(self, fig, epoch: int) -> str:
         cm_path = self.checkpoint_manager.base_dir / f"confusion_matrix_epoch_{epoch}.png"
