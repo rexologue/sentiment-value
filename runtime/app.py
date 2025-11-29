@@ -13,6 +13,7 @@ import yaml
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field, ValidationError
+from starlette.concurrency import run_in_threadpool
 
 from runtime.model import ModelWrapper, OptimizationInfo, load_model
 
@@ -131,6 +132,18 @@ def _probs_to_response(probs: torch.Tensor) -> PredictResponse:
     )
 
 
+def _predict_labels(model: ModelWrapper, texts: list[str], batch_size: int) -> list[float]:
+    predictions: list[float] = []
+
+    for start in range(0, len(texts), batch_size):
+        batch_texts = texts[start : start + batch_size]
+        probs = model.predict(batch_texts, batch_size=batch_size)
+        batch_preds = torch.argmax(probs, dim=1).tolist()
+        predictions.extend(float(p) for p in batch_preds)
+
+    return predictions
+
+
 @app.post("/predict", response_model=PredictResponse)
 async def predict(payload: PredictRequest) -> PredictResponse:
     model: ModelWrapper = app.state.model
@@ -138,7 +151,7 @@ async def predict(payload: PredictRequest) -> PredictResponse:
     LOGGER.info("/predict called with text length=%d", len(payload.text))
 
     try:
-        probs = model.predict([payload.text], batch_size=1)
+        probs = await run_in_threadpool(model.predict, [payload.text], batch_size=1)
     except Exception:
         LOGGER.exception("Model inference failed for /predict")
         raise HTTPException(status_code=500, detail="Model inference failed")
@@ -153,8 +166,8 @@ async def predict_csv(file: UploadFile = File(...)) -> StreamingResponse:
         raise HTTPException(status_code=400, detail="Uploaded file must be a CSV")
 
     try:
-        df = pd.read_csv(file.file)
-        
+        df = await run_in_threadpool(pd.read_csv, file.file)
+
     except Exception:
         LOGGER.exception("Failed to parse uploaded CSV")
         raise HTTPException(status_code=400, detail="Invalid CSV file")
@@ -174,13 +187,10 @@ async def predict_csv(file: UploadFile = File(...)) -> StreamingResponse:
 
     LOGGER.info("/csv called with rows=%d batch_size=%d", len(texts), batch_size)
 
-    predictions: list[float] = []
     try:
-        for start in range(0, len(texts), batch_size):
-            batch_texts = texts[start : start + batch_size]
-            probs = model.predict(batch_texts, batch_size=batch_size)
-            batch_preds = torch.argmax(probs, dim=1).tolist()
-            predictions.extend(float(p) for p in batch_preds)
+        predictions = await run_in_threadpool(
+            _predict_labels, model, texts, batch_size
+        )
 
     except Exception:
         LOGGER.exception("Model inference failed for /csv")
