@@ -54,6 +54,7 @@ class DataConfig:
     val_ratio: float = 0.1
     num_workers: int = 0
     upsample: bool = False
+    downsample: bool = False
 
 
 @dataclass

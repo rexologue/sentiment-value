@@ -75,6 +75,7 @@ def main():
         seed=cfg.training.seed,
         batch_size=cfg.training.batch_size,
         shuffle=True,
+        downsample=cfg.data.downsample,
     )
 
     train_dataset, val_dataset, label_encoder = load_datasets(data_cfg, cfg.model_name)
@@ -125,6 +126,7 @@ def main():
             "label_smoothing": cfg.training.label_smoothing,
             "attention_implementation": attn_implementation or "default",
             "upsample": cfg.data.upsample,
+            "downsample": cfg.data.downsample,
         }
     )
 

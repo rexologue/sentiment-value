@@ -93,6 +93,7 @@ def main():
         seed=cfg.training.seed,
         batch_size=cfg.training.batch_size,
         shuffle=True,
+        downsample=cfg.data.downsample,
     )
 
     train_dataset, val_dataset, label_encoder = load_datasets(data_cfg, cfg.model_name)
@@ -134,6 +135,7 @@ def main():
             "supcon_temperature": cfg.training.supcon_temperature,
             "attention_implementation": cfg.training.attention_implementation or "default",
             "upsample": cfg.data.upsample,
+            "downsample": cfg.data.downsample,
             "classification_loss_weight": cfg.training.classification_loss_weight,
             "metric_loss_weight": cfg.training.metric_loss_weight,
             "metric_validation": {
