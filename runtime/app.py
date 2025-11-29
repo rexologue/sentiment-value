@@ -12,6 +12,7 @@ import torch
 import yaml
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, ValidationError
 from starlette.concurrency import run_in_threadpool
 
@@ -117,7 +118,18 @@ async def lifespan(app: FastAPI):
 
 
 def create_app() -> FastAPI:
-    return FastAPI(title="Sentiment Inference API", lifespan=lifespan)
+    app = FastAPI(title="Sentiment Inference API", lifespan=lifespan)
+
+    # CORS, чтобы фронт с другого origin мог стучаться
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],          # при желании потом сузишь до своего домена
+        allow_credentials=False,
+        allow_methods=["*"],          # в т.ч. OPTIONS, POST, GET и т.д.
+        allow_headers=["*"],
+    )
+
+    return app
 
 
 app = create_app()
@@ -227,6 +239,7 @@ async def health() -> HealthResponse:
         compiled=info.compiled,
         attention=info.attn_implementation,
     )
+
 
 if __name__ == "__main__":
     import uvicorn
