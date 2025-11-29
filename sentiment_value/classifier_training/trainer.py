@@ -11,7 +11,7 @@ from torch.utils.data import DataLoader
 from torch.optim.lr_scheduler import LRScheduler
 from tqdm.auto import tqdm
 
-from sentiment_value.utils.training import move_batch_to_device
+from sentiment_value.classifier_training.utils.training import move_batch_to_device
 from sentiment_value.classifier_training.checkpoint_manager import CheckpointManager
 from sentiment_value.classifier_training.metrics import compute_metrics, plot_confusion_matrix
 

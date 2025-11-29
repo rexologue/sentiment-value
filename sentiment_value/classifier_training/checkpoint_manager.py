@@ -8,7 +8,7 @@ from typing import Dict, Optional
 import torch
 from shutil import copy2
 
-from sentiment_value.utils.training import ensure_dir
+from sentiment_value.classifier_training.utils.training import ensure_dir
 
 
 class CheckpointManager:
