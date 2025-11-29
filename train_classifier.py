@@ -6,6 +6,7 @@ from typing import Optional
 
 import torch
 from torch.optim import AdamW
+from torch.utils.data import DataLoader
 
 from transformers import (
     AutoModelForSequenceClassification,
@@ -20,7 +21,13 @@ from sentiment_value.classifier_training.checkpoint_manager import CheckpointMan
 from sentiment_value.classifier_training.utils.logger import NeptuneLogger
 from sentiment_value.classifier_training.utils.config import Config, load_config
 from sentiment_value.classifier_training.utils.training import ensure_dir, prepare_device, set_seed
-from sentiment_value.classifier_training.data import DatasetConfig, create_dataloaders, load_datasets
+from sentiment_value.classifier_training.data import (
+    DatasetConfig,
+    create_dataloaders,
+    load_datasets,
+    load_external_validation_dataset,
+    collate_batch,
+)
 
 
 def parse_args():
@@ -70,6 +77,7 @@ def main():
     tokenizer = AutoTokenizer.from_pretrained(cfg.model_name)
     data_cfg = DatasetConfig(
         parquet_path=cfg.data.parquet_path,
+        valid_parquet_path=cfg.data.valid_parquet_path,
         max_seq_length=cfg.training.max_seq_length,
         val_ratio=cfg.data.val_ratio,
         seed=cfg.training.seed,
@@ -88,6 +96,22 @@ def main():
         num_workers=cfg.data.num_workers,
         upsample=cfg.data.upsample,
     )
+
+    extra_val_loader: Optional[DataLoader] = None
+    if cfg.data.valid_parquet_path:
+        extra_val_dataset = load_external_validation_dataset(
+            cfg.data.valid_parquet_path,
+            tokenizer,
+            label_encoder,
+            cfg.training.max_seq_length,
+        )
+        extra_val_loader = DataLoader(
+            extra_val_dataset,
+            batch_size=cfg.training.batch_size,
+            shuffle=False,
+            collate_fn=collate_batch(tokenizer, cfg.training.max_seq_length),
+            num_workers=cfg.data.num_workers,
+        )
 
     attn_implementation = cfg.training.attention_implementation
     if attn_implementation == "flash_attention_2" and not is_flash_attn_2_available():
@@ -144,6 +168,7 @@ def main():
         device=device,
         logger=logger,
         label_encoder=label_encoder,
+        extra_val_loader=extra_val_loader,
         grad_accum_steps=cfg.training.gradient_accumulation_steps,
         mixed_precision=cfg.training.mixed_precision,
         gradient_clip_val=cfg.training.gradient_clip_val,

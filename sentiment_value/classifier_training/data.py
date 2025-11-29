@@ -207,6 +207,22 @@ def create_dataloaders(
     return train_loader, val_loader
 
 
+def load_external_validation_dataset(
+    parquet_path: str,
+    tokenizer: AutoTokenizer,
+    label_encoder: LabelEncoder,
+    max_seq_length: int,
+) -> ClassificationDataset:
+    """Load an external validation dataset using an existing tokenizer and encoder."""
+
+    df = pd.read_parquet(parquet_path)
+    if "text" not in df.columns or "label" not in df.columns:
+        raise ValueError("External validation parquet must contain 'text' and 'label' columns")
+
+    encoded_labels = label_encoder.encode(df["label"].tolist())
+    return ClassificationDataset(df["text"].tolist(), encoded_labels, tokenizer, max_seq_length)
+
+
 __all__ = [
     "DatasetConfig",
     "LabelEncoder",
@@ -214,4 +230,5 @@ __all__ = [
     "collate_batch",
     "load_datasets",
     "create_dataloaders",
+    "load_external_validation_dataset",
 ]

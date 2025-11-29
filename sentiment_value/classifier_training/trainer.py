@@ -37,6 +37,7 @@ class Trainer:
         save_every_n_bathces: int = 500,
         save_best_by: str = "loss",
         start_state: Optional[Dict] = None,
+        extra_val_loader: Optional[DataLoader] = None,
     ):
         """Initialize the trainer with dataloaders, optimizer, and logger.
 
@@ -70,6 +71,7 @@ class Trainer:
         self.device = device
         self.logger = logger
         self.label_encoder = label_encoder
+        self.extra_val_loader = extra_val_loader
         self.grad_accum_steps = grad_accum_steps
         self.mixed_precision = mixed_precision
         self.gradient_clip_val = gradient_clip_val
@@ -155,6 +157,21 @@ class Trainer:
                                 "train", "learning_rate", current_lr, step=self.global_step
                             )
 
+                        batch_preds = torch.argmax(outputs.logits.detach(), dim=-1).tolist()
+                        batch_labels = batch["labels"].tolist()
+                        batch_metrics = compute_metrics(batch_preds, batch_labels)
+                        self.logger.save_metrics(
+                            "train",
+                            ["f1", "accuracy", "precision", "recall"],
+                            [
+                                batch_metrics["f1"],
+                                batch_metrics["accuracy"],
+                                batch_metrics["precision"],
+                                batch_metrics["recall"],
+                            ],
+                            step=self.global_batch,
+                        )
+
                         epoch_loss += loss.item() * self.grad_accum_steps
                         running_train_loss = epoch_loss / (step + 1)
                         self.logger.save_metrics("train", "loss", running_train_loss, step=self.global_batch)
@@ -162,6 +179,8 @@ class Trainer:
 
                         if self.global_batch % self.save_every_n_batches == 0:
                             val_loss, metrics, cm_path = self.validate(epoch)
+                            if self.extra_val_loader is not None:
+                                self.validate(epoch, loader=self.extra_val_loader, suffix="_extra")
                             latest_val_results = (val_loss, metrics, cm_path)
                             self._maybe_save_best(val_loss, metrics, cm_path, epoch)
                             checkpoint_path = self._save_checkpoint(
@@ -182,6 +201,9 @@ class Trainer:
                     else:
                         val_loss, metrics, cm_path = latest_val_results
 
+                    if self.extra_val_loader is not None:
+                        self.validate(epoch, loader=self.extra_val_loader, suffix="_extra")
+
                     last_cm_path = cm_path
                     progress.set_description(
                         f"Epoch {epoch + 1} | train_loss={avg_train_loss:.4f} "
@@ -195,16 +217,19 @@ class Trainer:
             self._attempt_save_last_checkpoint(epoch, last_cm_path)
             raise
 
-    def validate(self, epoch: int):
+    def validate(
+        self, epoch: int, loader: Optional[DataLoader] = None, suffix: str = ""
+    ) -> tuple[float, Dict[str, float], str]:
         """Run validation and return loss, metrics, and confusion matrix path."""
 
+        eval_loader = loader or self.val_loader
         self.model.eval()
         total_loss = 0.0
-        preds = []
-        labels = []
+        preds: list[int] = []
+        labels: list[int] = []
 
         with torch.no_grad():
-            for batch in self.val_loader:
+            for batch in eval_loader:
                 batch = move_batch_to_device(batch, self.device)
                 outputs = self.model(**batch)
                 logits = outputs.logits
@@ -213,25 +238,34 @@ class Trainer:
                 preds.extend(torch.argmax(logits, dim=-1).tolist())
                 labels.extend(batch["labels"].tolist())
 
-        avg_loss = total_loss / len(self.val_loader)
+        avg_loss = total_loss / len(eval_loader)
         metrics = compute_metrics(preds, labels)
-        cm_fig = plot_confusion_matrix(labels, preds, [self.label_encoder.id_to_label[i] for i in sorted(self.label_encoder.id_to_label)])
-        cm_path = self._save_confusion_matrix(cm_fig, epoch)
-
-        self.logger.save_metrics(
-            "val",
-            ["loss", "accuracy", "precision", "recall", "f1"],
-            [avg_loss, metrics["accuracy"], metrics["precision"], metrics["recall"], metrics["f1"]],
-            step=self.global_batch,
+        cm_fig = plot_confusion_matrix(
+            labels,
+            preds,
+            [self.label_encoder.id_to_label[i] for i in sorted(self.label_encoder.id_to_label)],
         )
-        self.logger.save_plot("val", f"confusion_matrix_epoch_{epoch}", cm_fig)
+        cm_path = self._save_confusion_matrix(cm_fig, epoch, suffix)
+
+        metric_names = ["loss", "accuracy", "precision", "recall", "f1"]
+        metric_values = [
+            avg_loss,
+            metrics["accuracy"],
+            metrics["precision"],
+            metrics["recall"],
+            metrics["f1"],
+        ]
+        metric_names = [f"{name}{suffix}" for name in metric_names] if suffix else metric_names
+
+        self.logger.save_metrics("val", metric_names, metric_values, step=self.global_batch)
+        self.logger.save_plot("val", f"confusion_matrix{suffix}_epoch_{epoch}", cm_fig)
 
         return avg_loss, metrics, cm_path
 
-    def _save_confusion_matrix(self, fig, epoch: int) -> str:
+    def _save_confusion_matrix(self, fig, epoch: int, suffix: str = "") -> str:
         """Save the confusion matrix image for later inspection."""
 
-        cm_path = self.checkpoint_manager.base_dir / f"confusion_matrix_epoch_{epoch}.png"
+        cm_path = self.checkpoint_manager.base_dir / f"confusion_matrix{suffix}_epoch_{epoch}.png"
         fig.savefig(cm_path)
 
         return str(cm_path)

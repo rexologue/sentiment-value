@@ -49,6 +49,7 @@ class NeptuneConfig:
 @dataclass
 class DataConfig:
     parquet_path: str = "data/train.parquet"
+    valid_parquet_path: Optional[str] = None
     val_ratio: float = 0.1
     num_workers: int = 0
     upsample: bool = False
