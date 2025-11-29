@@ -4,9 +4,10 @@ WORKDIR /app
 
 COPY runtime/api-requirements.txt runtime/api-requirements.txt
 RUN pip install --no-cache-dir -r runtime/api-requirements.txt
+RUN python -m pip install ninja && python -m pip install --no-build-isolation -v flash-attn
 
-COPY . .
+COPY .. .
 
 ENV SENTIMENT_CONFIG_PATH=/app/config.yaml
 
-CMD ["uvicorn", "runtime.app:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["python", "-m", "runtime.app"]

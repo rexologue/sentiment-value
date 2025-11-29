@@ -1429,7 +1429,7 @@ CMakeUserPresets.json
 .neptune
 
 *.yaml
-!config.example.yaml
+!classifier_training.example.yaml
 !metric_classifier_training.example.yaml
 !docker-compose.example.yaml
 !clustering.example.yaml

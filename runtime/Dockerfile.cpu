@@ -6,7 +6,7 @@ RUN pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu 
 COPY runtime/api-requirements.txt runtime/api-requirements.txt
 RUN pip install --no-cache-dir -r runtime/api-requirements.txt
 
-COPY . .
+COPY .. .
 
 ENV SENTIMENT_CONFIG_PATH=/app/config.yaml
 

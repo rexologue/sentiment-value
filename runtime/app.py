@@ -77,6 +77,7 @@ async def lifespan(app: FastAPI):
     config_path = Path(os.environ.get(CONFIG_ENV, DEFAULT_CONFIG_PATH)).expanduser().resolve()
     try:
         config = ServiceConfig.from_yaml(config_path)
+
     except Exception as exc:  # pragma: no cover - startup failure
         logging.basicConfig(level="INFO")
         LOGGER.exception("Failed to load configuration from %s", config_path)
@@ -153,6 +154,7 @@ async def predict_csv(file: UploadFile = File(...)) -> StreamingResponse:
 
     try:
         df = pd.read_csv(file.file)
+        
     except Exception:
         LOGGER.exception("Failed to parse uploaded CSV")
         raise HTTPException(status_code=400, detail="Invalid CSV file")
@@ -179,6 +181,7 @@ async def predict_csv(file: UploadFile = File(...)) -> StreamingResponse:
             probs = model.predict(batch_texts, batch_size=batch_size)
             batch_preds = torch.argmax(probs, dim=1).tolist()
             predictions.extend(float(p) for p in batch_preds)
+
     except Exception:
         LOGGER.exception("Model inference failed for /csv")
         raise HTTPException(status_code=500, detail="Model inference failed")
@@ -207,4 +210,18 @@ async def health() -> HealthResponse:
         device=str(info.device),
         compiled=info.compiled,
         attention=info.attn_implementation,
+    )
+
+if __name__ == "__main__":
+    import uvicorn
+
+    config_path = Path(os.environ.get(CONFIG_ENV, DEFAULT_CONFIG_PATH)).expanduser().resolve()
+    config = ServiceConfig.from_yaml(config_path)
+    setup_logging(config.log_level, config.log_format)
+
+    uvicorn.run(
+        app,
+        host=config.host,
+        port=config.port,
+        log_level=config.log_level.lower(),
     )
