@@ -36,7 +36,8 @@ class MetricClassifierModel(nn.Module):
             encoder.config.num_labels = num_labels
 
     def forward(self, **inputs):
-        encoder_outputs = self.encoder(**inputs, output_hidden_states=True, return_dict=True)
+        encoder_inputs = {k: v for k, v in inputs.items() if k != "labels"}
+        encoder_outputs = self.encoder(**encoder_inputs, output_hidden_states=True, return_dict=True)
         hidden_states = getattr(encoder_outputs, "hidden_states", None)
         pooler_output = getattr(encoder_outputs, "pooler_output", None)
 
