@@ -27,6 +27,28 @@ paths:
           description: Некорректный запрос
         '500':
           description: Ошибка инференса модели
+  /cluster:
+    post:
+      summary: Предсказать класс через кластеризацию
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PredictRequest'
+      responses:
+        '200':
+          description: Успешный ответ с предсказанным классом и кластером
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClusterPredictResponse'
+        '503':
+          description: Кластеризатор не сконфигурирован
+        '422':
+          description: Предсказанный кластер отсутствует в карте классов
+        '500':
+          description: Ошибка инференса кластеризации
   /csv:
     post:
       summary: Предсказать тональность для CSV-файла
@@ -126,6 +148,20 @@ components:
           type: number
           format: float
           description: Вероятность позитивного класса (в процентах)
+    ClusterPredictResponse:
+      type: object
+      properties:
+        class_id:
+          type: integer
+          description: Предсказанный класс (0 — негатив, 1 — нейтральный, 2 — позитивный)
+        cluster_id:
+          type: integer
+          description: Предсказанный кластер (для отладки)
+        distance:
+          type: number
+          format: float
+          nullable: true
+          description: Минимальная дистанция до центроида (если доступна)
     LemmatizeResponse:
       type: object
       properties:
