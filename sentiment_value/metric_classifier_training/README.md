@@ -26,13 +26,15 @@
 ## Конфигурация (YAML)
 См. `metric_classifier_training.example.yaml`. Ключевые параметры:
 - `model_name` — базовая модель Hugging Face.
-- `data` — `parquet_path`, `val_ratio`, `num_workers`, `upsample`/`downsample`.
+- `data` — `parquet_path`, `valid_parquet_path` (опциональный внешний файл валидации помимо сплита `val_ratio`), `val_ratio`, `num_workers`, `upsample`/`downsample`.
 - `training` — `batch_size`, `num_epochs`, `gradient_accumulation_steps`, `max_seq_length`, `mixed_precision`, `attention_implementation`, `gradient_clip_val`, `seed`, `resume_from`, `supcon_temperature`, `classification_loss_weight`, `metric_loss_weight`.
 - `optimizer` — `learning_rate`, `weight_decay`.
 - `scheduler` — `warmup_steps`, `num_training_steps`, `name`, `num_cycles`.
 - `checkpointing` — `checkpoints_dir`, `save_every_n_bathces`, `save_best_by`.
 - `metric_validation` — `recall_at_k` (список), `distance` (`cos`/`l2`), `knn_k`, `keep_last_n_emb_steps`.
 - `neptune` — параметры логирования.
+
+Если указан `data.valid_parquet_path`, метрики будут дополнительно считаться на отдельной валидации (суффикс `_extra` в логах) поверх стандартного сплита по `val_ratio`.
 
 ## Запуск
 ```bash
