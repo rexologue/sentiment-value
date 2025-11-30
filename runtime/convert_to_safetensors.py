@@ -106,7 +106,7 @@ def build_full_model_folder(
     model.load_state_dict(state_dict, strict=True)
     model.save_pretrained(output_dir, safe_serialization=True)
 
-    tokenizer = AutoTokenizer.from_pretrained(model_path)
+    tokenizer = AutoTokenizer.from_pretrained(model_path, fix_mistral_regex=True)
     tokenizer.save_pretrained(output_dir)
 
 
