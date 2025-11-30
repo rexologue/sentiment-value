@@ -11,12 +11,14 @@
 ## Конфигурация (YAML)
 Используйте `classifier_training.example.yaml` как шаблон. Ключевые параметры:
 - `model_name` — путь или имя модели Hugging Face.
-- `data.parquet_path` — путь к Parquet-датасету; `val_ratio` — доля валидации; `num_workers` — воркеры даталоадеров; `upsample`/`downsample` — балансировка классов.
+- `data.parquet_path` — путь к Parquet-датасету; `valid_parquet_path` — опциональный отдельный файл для оценки на внешней валидации (в дополнение к сплиту по `val_ratio`); `val_ratio` — доля валидации; `num_workers` — воркеры даталоадеров; `upsample`/`downsample` — балансировка классов.
 - `training` — `batch_size`, `num_epochs`, `gradient_accumulation_steps`, `max_seq_length`, `mixed_precision`, `attention_implementation` (например, `flash_attention_2`), `gradient_clip_val`, `label_smoothing`, `seed`, `resume_from` (путь к чекпоинту).
 - `optimizer` — `learning_rate`, `weight_decay` (AdamW).
 - `scheduler` — тип (`linear`/`cosine`), `warmup_steps`, `num_training_steps` (если не указан — вычисляется из эпох), `num_cycles` для косинуса.
 - `checkpointing` — `checkpoints_dir`, `save_every_n_bathces` (период сохранения), `save_best_by` (`loss`/`accuracy`/`f1`).
 - `neptune` — `project`, `api_token`, `experiment_name`, `run_id`, `tags`, `dependencies_path`, `env_path`.
+
+При наличии `data.valid_parquet_path` тренер помимо стандартной валидации по сплиту `val_ratio` будет дополнительно считать метрики на внешнем файле (в логах появится суффикс `_extra`).
 
 ## Запуск обучения
 ```bash
