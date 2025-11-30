@@ -290,6 +290,47 @@ class UpdateDatasetConfig:
         return cfg
 
 
+@dataclass
+class ClusterLabelMapConfig:
+    """Configuration for deriving cluster->label mapping for the /cluster endpoint."""
+
+    shards_dir: str
+    output_path: str
+    cluster_column: str = "cluster_id"
+    label_column: str = "label"
+    progress: bool = True
+    log_level: str = "INFO"
+    extra_fields: Dict[str, Any] = field(default_factory=dict, repr=False)
+
+    def validate(self) -> None:
+        if not self.shards_dir:
+            raise ValueError("shards_dir must be provided")
+        if not self.output_path:
+            raise ValueError("output_path must be provided")
+        if not self.cluster_column:
+            raise ValueError("cluster_column must be provided")
+        if not self.label_column:
+            raise ValueError("label_column must be provided")
+        self.log_level = self.log_level.upper()
+
+    @classmethod
+    def from_yaml(cls, config_path: str) -> "ClusterLabelMapConfig":
+        data = _load_block(config_path, "cluster_label_map")
+        known_fields = {field.name for field in cls.__dataclass_fields__.values()}
+        init_kwargs: Dict[str, Any] = {}
+        extras: Dict[str, Any] = {}
+
+        for key, value in data.items():
+            if key in known_fields:
+                init_kwargs[key] = value
+            else:
+                extras[key] = value
+
+        cfg = cls(**init_kwargs, extra_fields=extras)
+        cfg.validate()
+        return cfg
+
+
 def parse_config_path(argv: Optional[Any] = None) -> argparse.Namespace:
     """Parse a single ``--config`` argument from the CLI.
 
@@ -311,5 +352,6 @@ __all__ = [
     "TrainConfig",
     "PurityCounterConfig",
     "UpdateDatasetConfig",
+    "ClusterLabelMapConfig",
     "parse_config_path",
 ]

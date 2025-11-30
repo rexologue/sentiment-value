@@ -9,6 +9,7 @@
 - `train.py`: обучение кластеризатора MiniBatchKMeans. При `gpu: true` используется CuML (если установлена), иначе scikit-learn. Также умеет режим `predict` для назначения кластеров на готовые PCA-вектора.
 - `purity_counter.py`: расчёт purity по колонкам с истинными/учительскими метками и кластерными id.
 - `update_dataset.py`: обновление Parquet-датасета по порогам purity/уверенности — добавление/фильтрация меток.
+- `label_map.py`: формирование YAML/JSON-карты `cluster_id -> label` на основе мажоритарной метки в кластере (для `/cluster`).
 
 Все скрипты используют общую конфигурацию из `clustering.example.yaml`.
 
@@ -46,6 +47,9 @@ python cluster_purity_counter.py --config clustering.example.yaml
 
 # 6) Обновление датасета псевдоразметкой
 python cluster_update_dataset.py --config clustering.example.yaml
+
+# 7) Построение карты кластер -> метка для сервиса
+python cluster_build_label_map.py --config clustering.example.yaml
 ```
 
 ## Метрики и анализ кластеров
@@ -58,4 +62,5 @@ python cluster_update_dataset.py --config clustering.example.yaml
 4. Запустить `cluster_train_clusters.py` в режиме `train` → сохранить `centroids.parquet` и `kmeans.joblib`.
 5. Перевести `run_mode` в `predict` и снова вызвать `cluster_train_clusters.py` → записать `cluster_id` в шардовые файлы.
 6. Посчитать purity (`cluster_purity_counter.py`) и при необходимости обновить датасет (`cluster_update_dataset.py`).
+7. Собрать карту `cluster_id -> label` для API `/cluster` (`cluster_build_label_map.py`).
 

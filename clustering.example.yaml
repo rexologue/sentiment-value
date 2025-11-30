@@ -60,3 +60,11 @@ update_dataset:
   downsample: true
   progress: true
   log_level: INFO
+
+cluster_label_map:
+  shards_dir: data/clustering/pca
+  output_path: data/clustering/centroids/cluster_to_label.yaml
+  cluster_column: cluster_id
+  label_column: label
+  progress: true
+  log_level: INFO
