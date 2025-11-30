@@ -224,7 +224,8 @@ class OptimizedSequenceClassificationModel:
             )
             LOGGER.info("Loaded tokenizer with fix_mistral_regex=True")
             return tokenizer
-        except TypeError:
+        
+        except:
             tokenizer = AutoTokenizer.from_pretrained(
                 model_dir,
                 use_fast=True,
