@@ -5,13 +5,11 @@ import logging
 import os
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Literal, Optional
+from typing import Literal
 
 from functools import lru_cache
 
 import pandas as pd
-import joblib
-import numpy as np
 import torch
 import yaml
 from fastapi import FastAPI, File, HTTPException, UploadFile
@@ -30,7 +28,6 @@ from natasha import (
 )
 
 from model import ModelWrapper, OptimizationInfo, load_model
-from sentiment_value.clustering.normalize_and_pca import l2_normalize
 
 LOGGER = logging.getLogger(__name__)
 CONFIG_ENV = "SENTIMENT_CONFIG_PATH"
@@ -41,9 +38,6 @@ class ServiceConfig(BaseModel):
     model_path: str
     prefer_cuda: bool = True
     enable_compile: bool = False
-    cluster_model_path: Optional[str] = None
-    cluster_pca_path: Optional[str] = None
-    cluster_label_map_path: Optional[str] = None
     host: str = "0.0.0.0"
     port: int = 8000
     csv_batch_size: int = 64
@@ -73,12 +67,6 @@ class PredictResponse(BaseModel):
     negative_score: float
     neutral_score: float
     positive_score: float
-
-
-class ClusterPredictResponse(BaseModel):
-    class_id: int
-    cluster_id: int
-    distance: Optional[float] = None
 
 
 class LemmatizeResponse(BaseModel):
@@ -141,70 +129,8 @@ async def lifespan(app: FastAPI):
         model.info.compiled,
     )
 
-    cluster_model = None
-    cluster_pca = None
-    cluster_label_map: Optional[dict[int, int]] = None
-    if config.cluster_model_path:
-        cluster_model_path = Path(config.cluster_model_path).expanduser().resolve()
-        if not cluster_model_path.exists():
-            raise FileNotFoundError(
-                f"Clustering model path does not exist: {cluster_model_path}"
-            )
-        cluster_model = joblib.load(cluster_model_path)
-        LOGGER.info("Loaded clustering model from %s", cluster_model_path)
-
-        if config.cluster_pca_path:
-            cluster_pca_path = Path(config.cluster_pca_path).expanduser().resolve()
-            if not cluster_pca_path.exists():
-                raise FileNotFoundError(
-                    f"PCA model path does not exist: {cluster_pca_path}"
-                )
-            cluster_pca = joblib.load(cluster_pca_path)
-            LOGGER.info("Loaded clustering PCA transformer from %s", cluster_pca_path)
-
-        if config.cluster_label_map_path:
-            label_map_path = Path(config.cluster_label_map_path).expanduser().resolve()
-            if not label_map_path.exists():
-                raise FileNotFoundError(
-                    f"Cluster label map path does not exist: {label_map_path}"
-                )
-
-            with label_map_path.open("r", encoding="utf-8") as f:
-                loaded_map = yaml.safe_load(f)
-
-            if not isinstance(loaded_map, dict) or not loaded_map:
-                raise ValueError(
-                    "Cluster label map must be a non-empty mapping of cluster_id to class_id"
-                )
-
-            cluster_label_map = {}
-            for key, value in loaded_map.items():
-                try:
-                    cluster_key = int(key)
-                    class_value = int(value)
-                except (TypeError, ValueError):
-                    raise ValueError(
-                        "Cluster label map keys and values must be integers"
-                    ) from None
-
-                if class_value not in (0, 1, 2):
-                    raise ValueError(
-                        f"Cluster label map contains invalid class {class_value}; expected 0, 1 or 2"
-                    )
-
-                cluster_label_map[cluster_key] = class_value
-
-            LOGGER.info(
-                "Loaded cluster label map with %s entries from %s",
-                len(cluster_label_map),
-                label_map_path,
-            )
-
     app.state.config = config
     app.state.model = model
-    app.state.cluster_model = cluster_model
-    app.state.cluster_pca = cluster_pca
-    app.state.cluster_label_map = cluster_label_map
 
     yield
 
@@ -279,24 +205,6 @@ def _probs_to_response(probs: torch.Tensor) -> PredictResponse:
     )
 
 
-def _prepare_cluster_features(
-    embeddings: torch.Tensor, pca_model: Optional[object]
-) -> np.ndarray:
-    """Convert embeddings to numpy features for clustering.
-
-    The vectors are L2-normalized to mirror ``normalize_and_pca.py`` and
-    optionally passed through a PCA transformer if provided.
-    """
-
-    vectors = embeddings.detach().cpu().numpy().astype("float32")
-    vectors = l2_normalize(vectors, np)
-
-    if pca_model is not None:
-        vectors = pca_model.transform(vectors)
-
-    return vectors
-
-
 def _predict_labels(model: ModelWrapper, texts: list[str], batch_size: int) -> list[float]:
     predictions: list[float] = []
 
@@ -323,62 +231,6 @@ async def predict(payload: PredictRequest) -> PredictResponse:
 
     response = _probs_to_response(probs)
     return response
-
-
-@app.post("/cluster", response_model=ClusterPredictResponse)
-async def cluster(payload: PredictRequest) -> ClusterPredictResponse:
-    model: ModelWrapper = app.state.model
-    cluster_model = getattr(app.state, "cluster_model", None)
-    cluster_pca = getattr(app.state, "cluster_pca", None)
-    cluster_label_map = getattr(app.state, "cluster_label_map", None)
-
-    if cluster_model is None:
-        raise HTTPException(status_code=503, detail="Clustering model is not configured")
-
-    if cluster_label_map is None:
-        raise HTTPException(
-            status_code=503,
-            detail="Cluster label map is not configured; cannot produce class predictions",
-        )
-
-    LOGGER.info(
-        "/cluster called with text length=%d pca=%s",
-        len(payload.text),
-        cluster_pca is not None,
-    )
-
-    try:
-        embeddings = await run_in_threadpool(
-            model.cls_embeddings, [payload.text], batch_size=1
-        )
-        features = await run_in_threadpool(
-            _prepare_cluster_features, embeddings, cluster_pca
-        )
-        preds = await run_in_threadpool(cluster_model.predict, features)
-        cluster_id = int(preds[0])
-
-        if cluster_id not in cluster_label_map:
-            raise HTTPException(
-                status_code=422,
-                detail=f"Cluster id {cluster_id} is missing in the configured label map",
-            )
-        class_id = int(cluster_label_map[cluster_id])
-
-        distance: Optional[float] = None
-        if hasattr(cluster_model, "transform"):
-            distances = await run_in_threadpool(cluster_model.transform, features)
-            if distances.size:
-                distance = float(np.min(distances[0]))
-
-    except HTTPException:
-        raise
-    except Exception:
-        LOGGER.exception("Clustering inference failed for /cluster")
-        raise HTTPException(status_code=500, detail="Clustering inference failed")
-
-    return ClusterPredictResponse(
-        class_id=class_id, cluster_id=cluster_id, distance=distance
-    )
 
 
 @app.post("/lemmatize", response_model=LemmatizeResponse)
