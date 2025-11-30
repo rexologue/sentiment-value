@@ -92,7 +92,7 @@ def main():
     if hasattr(torch, "set_float32_matmul_precision"):
         torch.set_float32_matmul_precision("high")
 
-    tokenizer = AutoTokenizer.from_pretrained(cfg.model_name, fix_mistral_regex=True)
+    tokenizer = AutoTokenizer.from_pretrained(cfg.model_name)
     data_cfg = DatasetConfig(
         parquet_path=cfg.data.parquet_path,
         valid_parquet_path=cfg.data.valid_parquet_path,
