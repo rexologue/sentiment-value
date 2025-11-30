@@ -17,6 +17,7 @@ class DatasetConfig:
     """Configuration describing how to load and split the dataset."""
 
     parquet_path: str
+    valid_parquet_path: Optional[str] = None
     max_seq_length: int = 256
     val_ratio: float = 0.1
     seed: int = 42
@@ -139,7 +140,7 @@ def load_datasets(
         )
 
     val_ratio = val_ratio if val_ratio is not None else config.val_ratio
-    tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
+    tokenizer = AutoTokenizer.from_pretrained(tokenizer_name, fix_mistral_regex=True)
 
     encoder = LabelEncoder(df["label"].tolist())
     encoded_labels = encoder.encode(df["label"].tolist())
