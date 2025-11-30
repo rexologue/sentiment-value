@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Union
 
 import torch
+import torch.nn.functional as F
 from transformers import AutoConfig, AutoModelForSequenceClassification, AutoTokenizer
 
 LOGGER = logging.getLogger(__name__)
@@ -127,7 +128,7 @@ class OptimizedSequenceClassificationModel:
         max_length: Optional[int] = None,
         batch_size: int = 32,
         **tokenizer_kwargs: Any,
-    ) -> torch.Tensor:
+        ) -> torch.Tensor:
         """Softmax over logits for one or many texts."""
         logits = self.logits(
             texts,
@@ -136,6 +137,57 @@ class OptimizedSequenceClassificationModel:
             **tokenizer_kwargs,
         )
         return torch.softmax(logits, dim=-1)
+
+    def cls_vectors(
+        self,
+        texts: Union[str, Sequence[str]],
+        *,
+        max_length: Optional[int] = None,
+        batch_size: int = 32,
+        normalize: bool = True,
+        **tokenizer_kwargs: Any,
+    ) -> torch.Tensor:
+        """Return CLS embeddings for one or many texts.
+
+        The vectors are always returned on CPU. Optionally performs L2
+        normalization to mirror preprocessing in the clustering pipeline.
+        """
+
+        if isinstance(texts, str):
+            texts = [texts]
+
+        if max_length is None:
+            max_length = (
+                self.tokenizer.model_max_length
+                if self.tokenizer.model_max_length
+                and self.tokenizer.model_max_length < 10000
+                else 128
+            )
+
+        all_vectors: List[torch.Tensor] = []
+        self.model.eval()
+
+        with torch.no_grad():
+            for start in range(0, len(texts), batch_size):
+                batch = texts[start : start + batch_size]
+                enc = self.tokenizer(
+                    list(batch),
+                    return_tensors="pt",
+                    padding=True,
+                    truncation=True,
+                    max_length=max_length,
+                    **tokenizer_kwargs,
+                )
+                enc = {k: v.to(self.device) for k, v in enc.items()}
+
+                outputs = self.model(**enc, output_hidden_states=True)
+                hidden_states = outputs.hidden_states[-1][:, 0, :].detach()
+                hidden_states = hidden_states.to("cpu")
+                if normalize:
+                    hidden_states = F.normalize(hidden_states, p=2, dim=1)
+                all_vectors.append(hidden_states)
+
+        return torch.cat(all_vectors, dim=0)
 
     # -------------------------------------------------------------------------
     # Internal helpers
@@ -321,6 +373,25 @@ class ModelWrapper:
         )
 
         return probs.to("cpu")
+
+    def cls_embeddings(
+        self,
+        texts: Sequence[str],
+        *,
+        batch_size: int = 32,
+        max_length: Optional[int] = None,
+        normalize: bool = True,
+    ) -> torch.Tensor:
+        """Return CLS embeddings on CPU for a batch of texts."""
+
+        vectors = self.model.cls_vectors(
+            list(texts),
+            batch_size=batch_size,
+            max_length=max_length,
+            normalize=normalize,
+        )
+
+        return vectors.to("cpu")
 
 
 def load_model(
