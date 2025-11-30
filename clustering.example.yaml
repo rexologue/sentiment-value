@@ -57,5 +57,6 @@ update_dataset:
   label_column: label
   cluster_id_column: cluster_id
   probs_column: probs
+  downsample: true
   progress: true
   log_level: INFO

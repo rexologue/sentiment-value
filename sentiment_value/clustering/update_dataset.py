@@ -103,7 +103,10 @@ def _process_shard(
         & (df["max_prob"] >= cfg.classification_max_prob_threshold)
     ).astype(int)
 
-    final_df = df[[cfg.text_column, cfg.label_column, "metric_mask", "classification_mask"]]
+    # Оставляем max_prob для последующего даунсэмплинга
+    final_df = df[
+        [cfg.text_column, cfg.label_column, "metric_mask", "classification_mask", "max_prob"]
+    ]
 
     return final_df, total_rows, dropped_purity, dropped_max_prob
 
@@ -112,8 +115,12 @@ def run(cfg: UpdateDatasetConfig) -> None:
     setup_logging(cfg.log_level)
     LOGGER.info("Loaded config: %s", cfg)
 
-    global_purity_threshold = min(cfg.metric_purity_threshold, cfg.classification_purity_threshold)
-    global_max_prob_threshold = min(cfg.metric_max_prob_threshold, cfg.classification_max_prob_threshold)
+    global_purity_threshold = min(
+        cfg.metric_purity_threshold, cfg.classification_purity_threshold
+    )
+    global_max_prob_threshold = min(
+        cfg.metric_max_prob_threshold, cfg.classification_max_prob_threshold
+    )
 
     LOGGER.info(
         "Using global thresholds purity>=%.4f, max_prob>=%.4f",
@@ -146,25 +153,82 @@ def run(cfg: UpdateDatasetConfig) -> None:
     if outputs:
         final_df = pd.concat(outputs, ignore_index=True)
     else:
-        final_df = pd.DataFrame(columns=[cfg.text_column, cfg.label_column, "metric_mask", "classification_mask"])
+        final_df = pd.DataFrame(
+            columns=[cfg.text_column, cfg.label_column, "metric_mask", "classification_mask", "max_prob"]
+        )
 
-    final_rows = len(final_df)
-    metric_fraction = (
-        final_df["metric_mask"].sum() / final_rows if final_rows else 0.0
-    )
-    classification_fraction = (
-        final_df["classification_mask"].sum() / final_rows if final_rows else 0.0
-    )
-
+    # Логгируем размеры до даунсэмплинга
+    pre_downsample_rows = len(final_df)
     LOGGER.info("Total input rows: %s", total_rows)
     LOGGER.info("Dropped by purity: %s", dropped_purity_total)
     LOGGER.info("Dropped by max_prob: %s", dropped_max_prob_total)
+    LOGGER.info("Rows after purity/max_prob filtering: %s", pre_downsample_rows)
+
+    # Даунсэмплинг по классам при включённом флаге
+    if getattr(cfg, "downsample", False) and pre_downsample_rows > 0:
+        if "max_prob" not in final_df.columns:
+            LOGGER.warning(
+                "Downsample is enabled in config, but 'max_prob' column is missing. Skipping downsampling."
+            )
+        else:
+            class_counts_before = final_df[cfg.label_column].value_counts().to_dict()
+            LOGGER.info("Class distribution before downsampling: %s", class_counts_before)
+
+            min_class_size = min(class_counts_before.values())
+            LOGGER.info(
+                "Downsampling enabled: keeping %d samples per class (based on smallest class).",
+                min_class_size,
+            )
+
+            balanced_parts: List[pd.DataFrame] = []
+            for label_value, group in final_df.groupby(cfg.label_column, sort=False):
+                group_size = len(group)
+                if group_size <= min_class_size:
+                    selected = group
+                    LOGGER.debug(
+                        "Class %s has %d samples (<= %d), keeping all.",
+                        label_value,
+                        group_size,
+                        min_class_size,
+                    )
+                else:
+                    selected = group.sort_values("max_prob", ascending=False).head(min_class_size)
+                    LOGGER.debug(
+                        "Class %s has %d samples, keeping top %d by max_prob.",
+                        label_value,
+                        group_size,
+                        min_class_size,
+                    )
+                balanced_parts.append(selected)
+
+            if balanced_parts:
+                final_df = pd.concat(balanced_parts, ignore_index=True)
+            else:
+                final_df = final_df.iloc[0:0].copy()
+
+            class_counts_after = final_df[cfg.label_column].value_counts().to_dict()
+            LOGGER.info("Class distribution after downsampling: %s", class_counts_after)
+
+    final_rows = len(final_df)
+    if final_rows:
+        metric_fraction = final_df["metric_mask"].sum() / final_rows
+        classification_fraction = final_df["classification_mask"].sum() / final_rows
+    else:
+        metric_fraction = 0.0
+        classification_fraction = 0.0
+
     LOGGER.info("Final dataset rows: %s", final_rows)
     LOGGER.info(
         "Mask fractions - metric: %.4f, classification: %.4f",
         metric_fraction,
         classification_fraction,
     )
+
+    # В итоговый датасет колонка max_prob не нужна
+    if "max_prob" in final_df.columns:
+        final_df = final_df[
+            [cfg.text_column, cfg.label_column, "metric_mask", "classification_mask"]
+        ]
 
     write_parquet_atomic(final_df, cfg.output_path)
     LOGGER.info("Wrote updated dataset to %s", cfg.output_path)

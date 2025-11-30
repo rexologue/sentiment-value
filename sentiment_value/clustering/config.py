@@ -246,6 +246,7 @@ class UpdateDatasetConfig:
     label_column: str = "label"
     cluster_id_column: str = "cluster_id"
     probs_column: str = "probs"
+    downsample: bool = True
     progress: bool = True
     log_level: str = "INFO"
     extra_fields: Dict[str, Any] = field(default_factory=dict, repr=False)

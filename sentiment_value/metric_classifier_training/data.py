@@ -144,7 +144,7 @@ def load_datasets(
         )
 
     val_ratio = val_ratio if val_ratio is not None else config.val_ratio
-    tokenizer = AutoTokenizer.from_pretrained(tokenizer_name, fix_mistral_regex=True)
+    tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
 
     labels_series = df["label"].astype("int64")
     encoder = LabelEncoder(labels_series.tolist())
