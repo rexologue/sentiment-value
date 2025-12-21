@@ -82,7 +82,6 @@ class Trainer:
         save_best_by: str = "loss",
         start_state: Optional[Dict] = None,
         metric_validation_cfg: Optional[Dict] = None,
-        extra_val_loader: Optional[DataLoader] = None,
     ):
         if save_best_by not in {"loss", "acc", "f1"}:
             raise ValueError("save_best_by must be one of {'loss', 'acc', 'f1'}")
@@ -95,7 +94,6 @@ class Trainer:
         self.device = device
         self.logger = logger
         self.label_encoder = label_encoder
-        self.extra_val_loader = extra_val_loader
         self.grad_accum_steps = grad_accum_steps
         self.mixed_precision = mixed_precision
         self.gradient_clip_val = gradient_clip_val
@@ -231,8 +229,6 @@ class Trainer:
 
                         if self.global_batch % self.save_every_n_batches == 0:
                             val_loss, metrics, cm_path = self.validate(epoch)
-                            if self.extra_val_loader is not None:
-                                self.validate(epoch, loader=self.extra_val_loader, suffix="_extra")
                             latest_val_results = (val_loss, metrics, cm_path)
                             self._maybe_save_best(val_loss, metrics, cm_path, epoch)
                             checkpoint_path = self._save_checkpoint(
@@ -253,18 +249,15 @@ class Trainer:
                     step=self.global_batch,
                 )
 
-                if latest_val_results is None:
-                    val_loss, metrics, cm_path = self.validate(epoch)
-                else:
-                    val_loss, metrics, cm_path = latest_val_results
+            if latest_val_results is None:
+                val_loss, metrics, cm_path = self.validate(epoch)
+            else:
+                val_loss, metrics, cm_path = latest_val_results
 
-                if self.extra_val_loader is not None:
-                    self.validate(epoch, loader=self.extra_val_loader, suffix="_extra")
-
-                last_cm_path = cm_path
-                progress.set_description(
-                    f"Epoch {epoch + 1} | total_loss={avg_train_total:.4f} "
-                    f"val_loss={val_loss:.4f} val_f1={metrics['f1']:.4f}"
+            last_cm_path = cm_path
+            progress.set_description(
+                f"Epoch {epoch + 1} | total_loss={avg_train_total:.4f} "
+                f"val_loss={val_loss:.4f} val_f1={metrics['f1']:.4f}"
                 )
                 progress.refresh()
                 self._maybe_save_best(val_loss, metrics, cm_path, epoch)

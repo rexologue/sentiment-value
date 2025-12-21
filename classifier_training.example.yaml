@@ -2,8 +2,7 @@ model_name: jhu-clsp/mmBERT-base
 
 data:
   parquet_path: data/dataset.parquet
-  valid_parquet_path: null
-  val_ratio: 0.1
+  valid_parquet_path: data/validation.parquet
   num_workers: 2
   upsample: false
   downsample: false

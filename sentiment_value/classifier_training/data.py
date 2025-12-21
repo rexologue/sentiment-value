@@ -2,24 +2,22 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Callable, Dict, Iterable, List, Optional, Sequence, Tuple, Union
+from typing import Callable, Dict, Iterable, List, Sequence, Tuple, Union
 from collections import Counter
 
 import pandas as pd
 import torch
-from sklearn.model_selection import train_test_split
 from torch.utils.data import DataLoader, Dataset, WeightedRandomSampler
 from transformers import AutoTokenizer
 
 
 @dataclass
 class DatasetConfig:
-    """Configuration describing how to load and split the dataset."""
+    """Configuration describing how to load the training and validation datasets."""
 
     parquet_path: str
-    valid_parquet_path: Optional[str] = None
+    valid_parquet_path: str
     max_seq_length: int = 256
-    val_ratio: float = 0.1
     seed: int = 42
     batch_size: int = 8
     shuffle: bool = True
@@ -111,50 +109,43 @@ def collate_batch(
 def load_datasets(
     config: DatasetConfig,
     tokenizer_name: str,
-    val_ratio: Optional[float] = None,
 ) -> Tuple[ClassificationDataset, ClassificationDataset, LabelEncoder]:
     """Load parquet data and return train/val datasets and a label encoder.
 
     Args:
-        config: Dataset configuration containing file path and split parameters.
+        config: Dataset configuration containing file paths and preprocessing parameters.
         tokenizer_name: Name or path of the tokenizer for consistent tokenization.
-        val_ratio: Optional override for the validation split ratio.
 
     Returns:
         A tuple of (train_dataset, val_dataset, label_encoder).
     """
 
-    df = pd.read_parquet(config.parquet_path)
-    if "text" not in df.columns or "label" not in df.columns:
-        raise ValueError("Parquet file must contain 'text' and 'label' columns")
+    train_df = pd.read_parquet(config.parquet_path)
+    val_df = pd.read_parquet(config.valid_parquet_path)
+
+    for name, df in {"train": train_df, "validation": val_df}.items():
+        if "text" not in df.columns or "label" not in df.columns:
+            raise ValueError(f"{name} parquet file must contain 'text' and 'label' columns")
 
     if config.downsample:
-        label_counts = df["label"].value_counts()
+        label_counts = train_df["label"].value_counts()
         if label_counts.empty:
             raise ValueError("Cannot downsample an empty dataset")
         min_count = label_counts.min()
-        df = (
-            df.groupby("label", group_keys=False)
+        train_df = (
+            train_df.groupby("label", group_keys=False)
             .apply(lambda g: g.sample(min_count, random_state=config.seed))
             .reset_index(drop=True)
         )
 
-    val_ratio = val_ratio if val_ratio is not None else config.val_ratio
     tokenizer = AutoTokenizer.from_pretrained(tokenizer_name, fix_mistral_regex=True)
 
-    encoder = LabelEncoder(df["label"].tolist())
-    encoded_labels = encoder.encode(df["label"].tolist())
+    encoder = LabelEncoder(list(train_df["label"].tolist()) + list(val_df["label"].tolist()))
+    train_labels = encoder.encode(train_df["label"].tolist())
+    val_labels = encoder.encode(val_df["label"].tolist())
 
-    train_texts, val_texts, train_labels, val_labels = train_test_split(
-        df["text"].tolist(),
-        encoded_labels,
-        test_size=val_ratio,
-        random_state=config.seed,
-        stratify=encoded_labels if encoder.num_labels > 1 else None,
-    )
-
-    train_dataset = ClassificationDataset(train_texts, train_labels, tokenizer, config.max_seq_length)
-    val_dataset = ClassificationDataset(val_texts, val_labels, tokenizer, config.max_seq_length)
+    train_dataset = ClassificationDataset(train_df["text"].tolist(), train_labels, tokenizer, config.max_seq_length)
+    val_dataset = ClassificationDataset(val_df["text"].tolist(), val_labels, tokenizer, config.max_seq_length)
 
     return train_dataset, val_dataset, encoder
 
@@ -207,23 +198,6 @@ def create_dataloaders(
 
     return train_loader, val_loader
 
-
-def load_external_validation_dataset(
-    parquet_path: str,
-    tokenizer: AutoTokenizer,
-    label_encoder: LabelEncoder,
-    max_seq_length: int,
-) -> ClassificationDataset:
-    """Load an external validation dataset using an existing tokenizer and encoder."""
-
-    df = pd.read_parquet(parquet_path)
-    if "text" not in df.columns or "label" not in df.columns:
-        raise ValueError("External validation parquet must contain 'text' and 'label' columns")
-
-    encoded_labels = label_encoder.encode(df["label"].tolist())
-    return ClassificationDataset(df["text"].tolist(), encoded_labels, tokenizer, max_seq_length)
-
-
 __all__ = [
     "DatasetConfig",
     "LabelEncoder",
@@ -231,5 +205,4 @@ __all__ = [
     "collate_batch",
     "load_datasets",
     "create_dataloaders",
-    "load_external_validation_dataset",
 ]
