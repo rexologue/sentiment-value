@@ -101,6 +101,7 @@ class NormalizePCAConfig:
     device: str = "cpu"
     overwrite: bool = False
     use_gpu_pca: bool = False
+    pca_model_path: Optional[str] = None
     extra_fields: Dict[str, Any] = field(default_factory=dict, repr=False)
 
     def validate(self) -> None:

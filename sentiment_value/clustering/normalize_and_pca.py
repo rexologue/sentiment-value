@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import pickle
 from glob import glob
 from typing import Iterable, List, Optional, Sequence
 
@@ -171,6 +172,13 @@ def run(cfg: NormalizePCAConfig) -> None:
         total_rows=total_rows,
         use_gpu_pca=cfg.use_gpu_pca,
     )
+
+    if cfg.pca_model_path:
+        model_dir = os.path.dirname(cfg.pca_model_path)
+        if model_dir:
+            os.makedirs(model_dir, exist_ok=True)
+        with open(cfg.pca_model_path, "wb") as fh:
+            pickle.dump(pca_model, fh)
 
     os.makedirs(cfg.output_dir, exist_ok=True)
     for shard_path in shard_paths:

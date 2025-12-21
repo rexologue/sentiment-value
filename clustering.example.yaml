@@ -18,6 +18,7 @@ normalize_and_pca:
   device: cpu
   overwrite: false
   use_gpu_pca: false
+  pca_model_path: data/clustering/pca/pca_model.pkl
 
 train:
   input_dir: data/clustering/pca

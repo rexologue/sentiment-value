@@ -7,7 +7,6 @@ from typing import Optional
 import torch
 from torch import nn
 from torch.optim import AdamW
-from torch.utils.data import DataLoader
 from transformers import AutoModel, AutoModelForSequenceClassification, AutoTokenizer, get_cosine_schedule_with_warmup, get_linear_schedule_with_warmup
 from transformers.utils import is_flash_attn_2_available  # type: ignore
 
@@ -15,8 +14,6 @@ from sentiment_value.metric_classifier_training.data import (
     DatasetConfig,
     create_dataloaders,
     load_datasets,
-    load_external_validation_dataset,
-    collate_batch,
 )
 from sentiment_value.metric_classifier_training.trainer import MetricClassifierModel, Trainer
 from sentiment_value.metric_classifier_training.utils.config import Config, load_config
@@ -97,12 +94,14 @@ def main():
         parquet_path=cfg.data.parquet_path,
         valid_parquet_path=cfg.data.valid_parquet_path,
         max_seq_length=cfg.training.max_seq_length,
-        val_ratio=cfg.data.val_ratio,
         seed=cfg.training.seed,
         batch_size=cfg.training.batch_size,
         shuffle=True,
         downsample=cfg.data.downsample,
     )
+
+    if not data_cfg.valid_parquet_path:
+        raise ValueError("A validation parquet path must be provided.")
 
     train_dataset, val_dataset, label_encoder = load_datasets(data_cfg, cfg.model_name)
     train_loader, val_loader = create_dataloaders(
@@ -114,22 +113,6 @@ def main():
         num_workers=cfg.data.num_workers,
         upsample=cfg.data.upsample,
     )
-
-    extra_val_loader: Optional[DataLoader] = None
-    if cfg.data.valid_parquet_path:
-        extra_val_dataset = load_external_validation_dataset(
-            cfg.data.valid_parquet_path,
-            tokenizer,
-            label_encoder,
-            cfg.training.max_seq_length,
-        )
-        extra_val_loader = DataLoader(
-            extra_val_dataset,
-            batch_size=cfg.training.batch_size,
-            shuffle=False,
-            collate_fn=collate_batch(tokenizer, cfg.training.max_seq_length),
-            num_workers=cfg.data.num_workers,
-        )
 
     model = build_model(cfg, label_encoder.num_labels)
 
@@ -198,8 +181,8 @@ def main():
             "recall_at_k": cfg.metric_validation.recall_at_k,
             "distance": cfg.metric_validation.distance,
             "knn_k": cfg.metric_validation.knn_k,
+            "keep_last_n_emb_steps": cfg.metric_validation.keep_last_n_emb_steps,
         },
-        extra_val_loader=extra_val_loader,
     )
 
     try:

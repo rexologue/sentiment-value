@@ -2,12 +2,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Callable, Dict, Iterable, List, Optional, Sequence, Tuple, Union
+from typing import Callable, Dict, Iterable, List, Sequence, Tuple, Union
 from collections import Counter
 
 import pandas as pd
 import torch
-from sklearn.model_selection import train_test_split
 from torch.utils.data import DataLoader, Dataset, WeightedRandomSampler
 from transformers import AutoTokenizer
 
@@ -15,9 +14,8 @@ from transformers import AutoTokenizer
 @dataclass
 class DatasetConfig:
     parquet_path: str
-    valid_parquet_path: Optional[str] = None
+    valid_parquet_path: str
     max_seq_length: int = 256
-    val_ratio: float = 0.1
     seed: int = 42
     batch_size: int = 8
     shuffle: bool = True
@@ -122,57 +120,51 @@ def collate_batch(tokenizer: AutoTokenizer, max_length: int) -> Callable[[List[D
 def load_datasets(
     config: DatasetConfig,
     tokenizer_name: str,
-    val_ratio: Optional[float] = None,
 ) -> Tuple[MetricClassificationDataset, MetricClassificationDataset, LabelEncoder]:
     """Load parquet data and return train/val datasets and a label encoder."""
 
-    df = pd.read_parquet(config.parquet_path)
+    train_df = pd.read_parquet(config.parquet_path)
+    val_df = pd.read_parquet(config.valid_parquet_path)
     required_columns = {"text", "label", "metric_mask", "classification_mask"}
-    if not required_columns.issubset(df.columns):
-        missing = required_columns - set(df.columns)
-        raise ValueError(f"Parquet file must contain columns: {missing}")
+
+    for name, df in {"train": train_df, "validation": val_df}.items():
+        if not required_columns.issubset(df.columns):
+            missing = required_columns - set(df.columns)
+            raise ValueError(f"{name} parquet file must contain columns: {missing}")
 
     if config.downsample:
-        label_counts = df["label"].value_counts()
+        label_counts = train_df["label"].value_counts()
         if label_counts.empty:
             raise ValueError("Cannot downsample an empty dataset")
         min_count = label_counts.min()
-        df = (
-            df.groupby("label", group_keys=False)
+        train_df = (
+            train_df.groupby("label", group_keys=False)
             .apply(lambda g: g.sample(min_count, random_state=config.seed))
             .reset_index(drop=True)
         )
 
-    val_ratio = val_ratio if val_ratio is not None else config.val_ratio
     tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
 
-    labels_series = df["label"].astype("int64")
-    encoder = LabelEncoder(labels_series.tolist())
-    encoded_labels = encoder.encode(labels_series.tolist())
-
-    train_texts, val_texts, train_labels, val_labels, train_metric_mask, val_metric_mask, train_classifier_mask, val_classifier_mask = train_test_split(
-        df["text"].tolist(),
-        encoded_labels,
-        df["metric_mask"].tolist(),
-        df["classification_mask"].tolist(),
-        test_size=val_ratio,
-        random_state=config.seed,
-        stratify=encoded_labels if encoder.num_labels > 1 else None,
+    labels_series = pd.concat(
+        [train_df["label"].astype("int64"), val_df["label"].astype("int64")], ignore_index=True
     )
+    encoder = LabelEncoder(labels_series.tolist())
+    train_labels = encoder.encode(train_df["label"].astype("int64").tolist())
+    val_labels = encoder.encode(val_df["label"].astype("int64").tolist())
 
     train_dataset = MetricClassificationDataset(
-        train_texts,
+        train_df["text"].tolist(),
         train_labels,
-        train_metric_mask,
-        train_classifier_mask,
+        train_df["metric_mask"].tolist(),
+        train_df["classification_mask"].tolist(),
         tokenizer,
         config.max_seq_length,
     )
     val_dataset = MetricClassificationDataset(
-        val_texts,
+        val_df["text"].tolist(),
         val_labels,
-        val_metric_mask,
-        val_classifier_mask,
+        val_df["metric_mask"].tolist(),
+        val_df["classification_mask"].tolist(),
         tokenizer,
         config.max_seq_length,
     )
@@ -226,32 +218,6 @@ def create_dataloaders(
     return train_loader, val_loader
 
 
-def load_external_validation_dataset(
-    parquet_path: str,
-    tokenizer: AutoTokenizer,
-    label_encoder: LabelEncoder,
-    max_seq_length: int,
-) -> MetricClassificationDataset:
-    """Load an external validation dataset with all masks enabled."""
-
-    df = pd.read_parquet(parquet_path)
-    if "text" not in df.columns or "label" not in df.columns:
-        raise ValueError("External validation parquet must contain 'text' and 'label' columns")
-
-    labels = label_encoder.encode(df["label"].astype("int64").tolist())
-    metric_mask = [1.0 for _ in labels]
-    classifier_mask = [1.0 for _ in labels]
-
-    return MetricClassificationDataset(
-        df["text"].tolist(),
-        labels,
-        metric_mask,
-        classifier_mask,
-        tokenizer,
-        max_seq_length,
-    )
-
-
 __all__ = [
     "DatasetConfig",
     "LabelEncoder",
@@ -259,5 +225,4 @@ __all__ = [
     "collate_batch",
     "load_datasets",
     "create_dataloaders",
-    "load_external_validation_dataset",
 ]
