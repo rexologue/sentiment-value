@@ -1,0 +1,8 @@
+services:
+  web:
+    build:
+      context: .
+    ports:
+      - "3000:3000"
+    environment:
+      CLASSIFIER_API_URL: ${CLASSIFIER_API_URL:-http://runtime:8000}

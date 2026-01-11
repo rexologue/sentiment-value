@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Sentiment Classifier</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <main class="container">
+      <header class="header">
+        <h1>Sentiment Classifier</h1>
+        <p class="subtitle">Minimal interface for the runtime classifier API.</p>
+      </header>
+
+      <section class="card">
+        <div class="card-header">
+          <h2>Available classes</h2>
+          <span id="classes-status" class="status">Loading...</span>
+        </div>
+        <div id="class-chips" class="chips"></div>
+      </section>
+
+      <section class="card">
+        <h2>Text input</h2>
+        <textarea
+          id="input-text"
+          rows="6"
+          placeholder="Paste or type text to classify..."
+        ></textarea>
+        <div class="actions">
+          <button id="predict-btn" class="primary">Predict</button>
+          <span id="error-message" class="error" role="alert"></span>
+        </div>
+      </section>
+
+      <section class="card" id="results-card">
+        <div class="card-header">
+          <h2>Results</h2>
+          <span id="prediction-label" class="prediction">—</span>
+        </div>
+        <div id="probability-list" class="probabilities"></div>
+      </section>
+    </main>
+
+    <script src="/static/app.js"></script>
+  </body>
+</html>
