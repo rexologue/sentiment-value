@@ -127,12 +127,12 @@ components:
       additionalProperties:
         type: number
         format: float
-        description: Вероятности классов в полях class_0..class_{N-1}
+        description: Вероятности классов в полях с именами классов
       example:
         prediction: neutral
-        class_0: 0.0123
-        class_1: 0.9812
-        class_2: 0.0065
+        negative: 0.0123
+        neutral: 0.9812
+        positive: 0.0065
     ClassesResponse:
       type: object
       properties:
