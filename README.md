@@ -58,11 +58,14 @@ python -m pip install --no-build-isolation -v flash-attn
 3. **Инференс обученной моделью в runtime:**
    - Скопируйте полученный чекпоинт/папку модели в директорию, указанную в `runtime/config.yaml`.
    - Запустите сервис (см. раздел "Runtime").
-   - Отправьте запросы (доступны `/predict`, `/lemmatize`, `/ner`, `/csv`, `/health`):
+   - `/predict` возвращает `prediction` (имя класса) и вероятности `class_0..class_{N-1}`; `/csv` отдаёт `ID,label`, где `label` — имя класса.
+   - Отправьте запросы (доступны `/predict`, `/classes`, `/lemmatize`, `/ner`, `/csv`, `/health`):
      ```bash
      curl -X POST "http://localhost:8000/predict" \
        -H "Content-Type: application/json" \
        -d '{"text": "Пример текста"}'
+
+     curl "http://localhost:8000/classes"
 
      curl -X POST "http://localhost:8000/lemmatize" \
        -H "Content-Type: application/json" \
@@ -106,4 +109,3 @@ Neptune поддерживается во всех тренировочных с
 - **Новый модуль/скрипт:** следуйте шаблону `sentiment_value/<module>`: выделяйте конфиги в YAML, добавляйте утилиты логирования и CLI-обёртку в корне.
 - **Новый способ тренировки:** создайте отдельный конфиг и тренер, переиспользуя даталоадеры и `CheckpointManager` из `classifier_training`.
 - **Новый endpoint в runtime:** добавьте маршрут в `runtime/app.py`, опишите схему в `runtime/swagger.yaml` и при необходимости расширьте `ModelWrapper` в `runtime/model.py`.
-

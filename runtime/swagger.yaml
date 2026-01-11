@@ -43,7 +43,7 @@ paths:
                   description: CSV-файл со столбцами ID и text
       responses:
         '200':
-          description: CSV с предсказаниями
+          description: CSV с предсказаниями (ID,label с именем класса)
           content:
             text/csv:
               schema:
@@ -99,6 +99,16 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HealthResponse'
+  /classes:
+    get:
+      summary: Получить список классов модели
+      responses:
+        '200':
+          description: Список доступных классов
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClassesResponse'
 components:
   schemas:
     PredictRequest:
@@ -112,20 +122,25 @@ components:
       type: object
       properties:
         prediction:
-          type: integer
-          description: Предсказанная метка класса
-        negative_score:
-          type: number
-          format: float
-          description: Вероятность негативного класса (в процентах)
-        neutral_score:
-          type: number
-          format: float
-          description: Вероятность нейтрального класса (в процентах)
-        positive_score:
-          type: number
-          format: float
-          description: Вероятность позитивного класса (в процентах)
+          type: string
+          description: Предсказанное имя класса
+      additionalProperties:
+        type: number
+        format: float
+        description: Вероятности классов в полях class_0..class_{N-1}
+      example:
+        prediction: neutral
+        class_0: 0.0123
+        class_1: 0.9812
+        class_2: 0.0065
+    ClassesResponse:
+      type: object
+      properties:
+        classes:
+          type: array
+          items:
+            type: string
+          description: Список классов в порядке индексов модели
     LemmatizeResponse:
       type: object
       properties:

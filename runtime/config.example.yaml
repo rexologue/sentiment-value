@@ -1,4 +1,5 @@
 model_path: /app/model
+classes: ["negative", "neutral", "positive"]
 prefer_cuda: true
 enable_compile: false
 host: 0.0.0.0
