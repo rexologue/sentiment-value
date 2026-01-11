@@ -170,8 +170,8 @@ class OptimizedSequenceClassificationModel:
                 "Loaded tokenizer with fix_mistral_regex=True",
             ),
             (
-                {"use_fast": True},
-                "Loaded tokenizer without fix_mistral_regex (fast)",
+                {"use_fast": True, "fix_mistral_regex": False},
+                "Loaded tokenizer with fix_mistral_regex=False (fast)",
             ),
             (
                 {"use_fast": False},
