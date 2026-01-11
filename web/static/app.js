@@ -30,7 +30,10 @@ function renderClasses() {
 function renderProbabilities(result) {
   probabilityList.innerHTML = "";
   classes.forEach((label, index) => {
-    const valueKey = `class_${index}`;
+    const fallbackKey = `class_${index}`;
+    const valueKey = Object.prototype.hasOwnProperty.call(result, label)
+      ? label
+      : fallbackKey;
     const value = result[valueKey];
     const row = document.createElement("div");
     row.className = "probability-row";
@@ -43,7 +46,7 @@ function renderProbabilities(result) {
     const title = document.createElement("strong");
     title.textContent = label;
     const subtitle = document.createElement("span");
-    subtitle.textContent = valueKey;
+    subtitle.textContent = valueKey === label ? "вероятность" : valueKey;
     labelWrap.appendChild(title);
     labelWrap.appendChild(subtitle);
 
@@ -64,7 +67,7 @@ function renderProbabilities(result) {
 }
 
 async function loadClasses() {
-  classesStatus.textContent = "Loading...";
+  classesStatus.textContent = "Загрузка...";
   try {
     const response = await fetch("/classes");
     if (!response.ok) {
@@ -76,10 +79,10 @@ async function loadClasses() {
     }
     classes = data.classes;
     renderClasses();
-    classesStatus.textContent = `${classes.length} classes`;
+    classesStatus.textContent = `${classes.length} классов`;
   } catch (error) {
-    classesStatus.textContent = "Unavailable";
-    setError("Unable to load classes. Please check the API connection.");
+    classesStatus.textContent = "Недоступно";
+    setError("Не удалось загрузить классы. Проверьте подключение к API.");
   }
 }
 
@@ -87,11 +90,11 @@ async function handlePredict() {
   setError("");
   const text = inputText.value.trim();
   if (!text) {
-    setError("Please enter some text to classify.");
+    setError("Введите текст для классификации.");
     return;
   }
   if (classes.length === 0) {
-    setError("Classes not loaded yet. Please wait.");
+    setError("Классы еще не загружены. Подождите.");
     return;
   }
   predictButton.disabled = true;
@@ -105,18 +108,18 @@ async function handlePredict() {
     });
     if (!response.ok) {
       const detail = await response.json().catch(() => ({}));
-      const message = detail.detail || "Prediction failed.";
+      const message = detail.detail || "Не удалось выполнить классификацию.";
       throw new Error(message);
     }
     const result = await response.json();
     if (!result.prediction) {
-      throw new Error("Invalid prediction response.");
+      throw new Error("Некорректный ответ классификатора.");
     }
     predictionLabel.textContent = result.prediction;
     renderProbabilities(result);
   } catch (error) {
     clearResults();
-    setError(error.message || "Prediction failed.");
+    setError(error.message || "Не удалось выполнить классификацию.");
   } finally {
     predictButton.disabled = false;
   }
