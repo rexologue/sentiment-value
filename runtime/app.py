@@ -212,8 +212,8 @@ def _probs_to_response(probs: torch.Tensor, classes: list[str]) -> dict[str, flo
     prediction_index = int(torch.argmax(probs, dim=1).item())
     response: dict[str, float | str] = {"prediction": classes[prediction_index]}
 
-    for idx, score in enumerate(scores):
-        response[f"class_{idx}"] = round(float(score), 4)
+    for class_name, score in zip(classes, scores):
+        response[class_name] = round(float(score), 4)
 
     return response
 
