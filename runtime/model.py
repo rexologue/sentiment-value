@@ -164,22 +164,37 @@ class OptimizedSequenceClassificationModel:
     @staticmethod
     def _load_tokenizer(model_dir: str):
         # Try to fix Mistral-style regex if transformers supports it.
-        try:
-            tokenizer = AutoTokenizer.from_pretrained(
-                model_dir,
-                use_fast=True,
-                fix_mistral_regex=True,
-            )
-            LOGGER.info("Loaded tokenizer with fix_mistral_regex=True")
-            return tokenizer
-        
-        except:
-            tokenizer = AutoTokenizer.from_pretrained(
-                model_dir,
-                use_fast=True,
-            )
-            LOGGER.info("Loaded tokenizer without fix_mistral_regex (not supported)")
-            return tokenizer
+        attempts = [
+            (
+                {"use_fast": True, "fix_mistral_regex": True},
+                "Loaded tokenizer with fix_mistral_regex=True",
+            ),
+            (
+                {"use_fast": True},
+                "Loaded tokenizer without fix_mistral_regex (fast)",
+            ),
+            (
+                {"use_fast": False},
+                "Loaded tokenizer with use_fast=False",
+            ),
+        ]
+
+        last_exc: Optional[BaseException] = None
+
+        for kwargs, message in attempts:
+            try:
+                tokenizer = AutoTokenizer.from_pretrained(model_dir, **kwargs)
+                LOGGER.info(message)
+                return tokenizer
+            except Exception as exc:
+                LOGGER.warning(
+                    "Tokenizer load failed with options %s: %s",
+                    kwargs,
+                    exc,
+                )
+                last_exc = exc
+
+        raise RuntimeError(f"Failed to load tokenizer from {model_dir}") from last_exc
 
     @staticmethod
     def _load_with_best_attention_impl(
