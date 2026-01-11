@@ -1,0 +1,11 @@
+services:
+  web:
+    build:
+      context: .
+    ports:
+      - "3000:3000"
+    environment:
+      # When using docker compose with a runtime service on the same network:
+      CLASSIFIER_API_URL: http://runtime:8000
+      # If the runtime is running on the host machine:
+      # CLASSIFIER_API_URL: http://host.docker.internal:8000
