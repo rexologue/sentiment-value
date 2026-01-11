@@ -36,6 +36,7 @@ DEFAULT_CONFIG_PATH = "/app/config.yaml"
 
 class ServiceConfig(BaseModel):
     model_path: str
+    classes: list[str]
     prefer_cuda: bool = True
     enable_compile: bool = False
     host: str = "0.0.0.0"
@@ -60,13 +61,6 @@ class ServiceConfig(BaseModel):
 
 class PredictRequest(BaseModel):
     text: str = Field(..., min_length=1)
-
-
-class PredictResponse(BaseModel):
-    prediction: int
-    negative_score: float
-    neutral_score: float
-    positive_score: float
 
 
 class LemmatizeResponse(BaseModel):
@@ -129,6 +123,8 @@ async def lifespan(app: FastAPI):
         model.info.compiled,
     )
 
+    _validate_classes(config, model)
+
     app.state.config = config
     app.state.model = model
 
@@ -190,36 +186,59 @@ def _extract_entities(text: str) -> list[str]:
     return [span.text for span in doc.spans]
 
 
-def _probs_to_response(probs: torch.Tensor) -> PredictResponse:
-    if probs.ndim != 2 or probs.shape[1] != 3:
-        raise ValueError("Model output must be of shape [batch, 3]")
-
-    scores = probs[0] * 100.0
-    prediction = int(torch.argmax(scores).item())
-
-    return PredictResponse(
-        prediction=prediction,
-        negative_score=round(float(scores[0].item()), 4),
-        neutral_score=round(float(scores[1].item()), 4),
-        positive_score=round(float(scores[2].item()), 4),
-    )
+def _validate_classes(config: ServiceConfig, model: ModelWrapper) -> None:
+    classes = config.classes
+    if not classes:
+        raise ValueError("Config classes must be a non-empty list.")
+    if any(not isinstance(cls, str) or not cls.strip() for cls in classes):
+        raise ValueError("Config classes must not contain empty strings.")
+    if len(classes) != model.num_labels:
+        raise ValueError(
+            "Config classes length must match model.num_labels "
+            f"({len(classes)} != {model.num_labels})."
+        )
 
 
-def _predict_labels(model: ModelWrapper, texts: list[str], batch_size: int) -> list[float]:
-    predictions: list[float] = []
+def _probs_to_response(probs: torch.Tensor, classes: list[str]) -> dict[str, float | str]:
+    if probs.ndim != 2 or probs.shape[0] != 1:
+        raise ValueError("Model output must be of shape [1, num_labels]")
+    if probs.shape[1] != len(classes):
+        raise ValueError(
+            "Model output classes do not match configured classes "
+            f"({probs.shape[1]} != {len(classes)})."
+        )
+
+    scores = probs[0].tolist()
+    prediction_index = int(torch.argmax(probs, dim=1).item())
+    response: dict[str, float | str] = {"prediction": classes[prediction_index]}
+
+    for idx, score in enumerate(scores):
+        response[f"class_{idx}"] = round(float(score), 4)
+
+    return response
+
+
+def _predict_labels(
+    model: ModelWrapper,
+    texts: list[str],
+    batch_size: int,
+    classes: list[str],
+) -> list[str]:
+    predictions: list[str] = []
 
     for start in range(0, len(texts), batch_size):
         batch_texts = texts[start : start + batch_size]
         probs = model.predict(batch_texts, batch_size=batch_size)
         batch_preds = torch.argmax(probs, dim=1).tolist()
-        predictions.extend(float(p) for p in batch_preds)
+        predictions.extend(classes[int(p)] for p in batch_preds)
 
     return predictions
 
 
-@app.post("/predict", response_model=PredictResponse)
-async def predict(payload: PredictRequest) -> PredictResponse:
+@app.post("/predict")
+async def predict(payload: PredictRequest) -> dict[str, float | str]:
     model: ModelWrapper = app.state.model
+    classes = app.state.config.classes
 
     LOGGER.info("/predict called with text length=%d", len(payload.text))
 
@@ -229,7 +248,7 @@ async def predict(payload: PredictRequest) -> PredictResponse:
         LOGGER.exception("Model inference failed for /predict")
         raise HTTPException(status_code=500, detail="Model inference failed")
 
-    response = _probs_to_response(probs)
+    response = _probs_to_response(probs, classes)
     return response
 
 
@@ -282,12 +301,13 @@ async def predict_csv(file: UploadFile = File(...)) -> StreamingResponse:
 
     model: ModelWrapper = app.state.model
     batch_size = app.state.config.csv_batch_size
+    classes = app.state.config.classes
 
     LOGGER.info("/csv called with rows=%d batch_size=%d", len(texts), batch_size)
 
     try:
         predictions = await run_in_threadpool(
-            _predict_labels, model, texts, batch_size
+            _predict_labels, model, texts, batch_size, classes
         )
     except Exception:
         LOGGER.exception("Model inference failed for /csv")
@@ -305,6 +325,12 @@ async def predict_csv(file: UploadFile = File(...)) -> StreamingResponse:
     }
 
     return StreamingResponse(buffer, media_type="text/csv", headers=headers)
+
+
+@app.get("/classes")
+async def get_classes() -> dict[str, list[str]]:
+    config: ServiceConfig = app.state.config
+    return {"classes": config.classes}
 
 
 @app.get("/health", response_model=HealthResponse)
